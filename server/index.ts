@@ -15,6 +15,8 @@ interface RoomMember {
   username: string;
   color: string;
   isOwner: boolean;
+  connected: boolean;         // Is this member currently connected?
+  disconnectTimer?: ReturnType<typeof setTimeout>; // 30s timeout handle
 }
 
 interface RoomData {
@@ -50,6 +52,8 @@ const PLAYER_COLORS: Record<string, string> = {
   orange: '#f97316',
 };
 
+const DISCONNECT_TIMEOUT_MS = 30_000; // 30 seconds
+
 // Helper: build sanitized lobby info to send to clients
 function buildLobbyUpdate(roomName: string) {
   const room = rooms[roomName];
@@ -60,6 +64,7 @@ function buildLobbyUpdate(roomName: string) {
       username: m.username,
       color: m.color,
       isOwner: m.isOwner,
+      connected: m.connected,
     })),
     started: room.started,
     takenColors: room.members.map(m => m.color),
@@ -67,18 +72,72 @@ function buildLobbyUpdate(roomName: string) {
   };
 }
 
+// Helper: find which playerId (p1, p2...) corresponds to a username
+function findPlayerIdByUsername(state: GameState, username: string): string | null {
+  for (const pid of state.turnOrder) {
+    if (state.players[pid]?.name === username) return pid;
+  }
+  return null;
+}
+
+// Helper: skip disconnected player's turn
+function skipDisconnectedPlayerTurn(roomName: string) {
+  const room = rooms[roomName];
+  if (!room || !room.gameState) return;
+
+  const state = room.gameState;
+  const currentPid = state.turnOrder[state.currentTurnIndex];
+  const currentMember = room.members.find(m => {
+    const pid = findPlayerIdByUsername(state, m.username);
+    return pid === currentPid;
+  });
+
+  // Only skip if the current player is disconnected
+  if (currentMember && !currentMember.connected) {
+    console.log(`Auto-skipping turn for disconnected player "${currentMember.username}" in room "${roomName}"`);
+    let newState = gameEngine.endTurn(state);
+    // If we're in a phase that doesn't allow endTurn (e.g. need to roll), force through
+    if (newState === state) {
+      // Force roll dice if needed
+      if (state.turnPhase === 'ROLL') {
+        newState = gameEngine.rollDice(state);
+        if (newState !== state) {
+          newState = gameEngine.endTurn(newState);
+        }
+      }
+      // If still stuck (e.g. ROBBER_MOVE), just move to next player
+      if (newState === state) {
+        const nextIndex = (state.currentTurnIndex + 1) % state.turnOrder.length;
+        newState = {
+          ...state,
+          currentTurnIndex: nextIndex,
+          turnPhase: 'ROLL',
+          diceState: { die1: 1, die2: 1, rolled: false },
+        };
+      }
+    }
+    room.gameState = newState;
+    io.to(roomName).emit('gameState', newState);
+
+    // Check if the NEXT player is also disconnected, and schedule skip for them too
+    const nextPid = newState.turnOrder[newState.currentTurnIndex];
+    const nextMember = room.members.find(m => findPlayerIdByUsername(newState, m.username) === nextPid);
+    if (nextMember && !nextMember.connected) {
+      setTimeout(() => skipDisconnectedPlayerTurn(roomName), 2000);
+    }
+  }
+}
+
 // ─── Socket Handlers ─────────────────────────────────────
 io.on('connection', (socket) => {
   console.log(`Connected: ${socket.id}`);
 
-  // Track which room this socket is in
   let currentRoom: string | null = null;
 
   // ── Create Room ──────────────────────────────────────
   socket.on('createRoom', ({ roomName, password, username, color }: {
     roomName: string; password: string; username: string; color: string;
   }) => {
-    // Validation
     if (!roomName || !password || !username || !color) {
       return socket.emit('lobbyError', 'Tüm alanlar doldurulmalıdır.');
     }
@@ -89,7 +148,6 @@ io.on('connection', (socket) => {
       return socket.emit('lobbyError', 'Geçersiz renk seçimi.');
     }
 
-    // Create room
     rooms[roomName] = {
       password,
       members: [{
@@ -97,6 +155,7 @@ io.on('connection', (socket) => {
         username,
         color,
         isOwner: true,
+        connected: true,
       }],
       gameState: null,
       started: false,
@@ -110,7 +169,7 @@ io.on('connection', (socket) => {
     io.to(roomName).emit('lobbyUpdate', buildLobbyUpdate(roomName));
   });
 
-  // ── Join Room ────────────────────────────────────────
+  // ── Join Room (also handles Reconnection) ────────────
   socket.on('joinRoom', ({ roomName, password, username, color }: {
     roomName: string; password: string; username: string; color: string;
   }) => {
@@ -125,14 +184,47 @@ io.on('connection', (socket) => {
     if (room.password !== password) {
       return socket.emit('lobbyError', 'Oda şifresi yanlış.');
     }
+
+    // ── RECONNECTION: Check if this username already exists in the room ──
+    const existingMember = room.members.find(m => m.username.toLowerCase() === username.toLowerCase());
+
+    if (existingMember) {
+      // Player is reconnecting
+      if (existingMember.connected) {
+        return socket.emit('lobbyError', 'Bu kullanıcı adı zaten aktif olarak bağlı.');
+      }
+
+      // Cancel disconnect timer
+      if (existingMember.disconnectTimer) {
+        clearTimeout(existingMember.disconnectTimer);
+        existingMember.disconnectTimer = undefined;
+      }
+
+      // Re-associate socket
+      existingMember.socketId = socket.id;
+      existingMember.connected = true;
+      currentRoom = roomName;
+      socket.join(roomName);
+
+      console.log(`${username} RECONNECTED to room "${roomName}" (${socket.id})`);
+
+      socket.emit('roomJoined', { roomName, isOwner: existingMember.isOwner });
+
+      // If game is in progress, send the current game state
+      if (room.started && room.gameState) {
+        socket.emit('gameStarted', room.gameState);
+      }
+
+      io.to(roomName).emit('lobbyUpdate', buildLobbyUpdate(roomName));
+      return;
+    }
+
+    // ── NEW PLAYER joining ──
     if (room.started) {
-      return socket.emit('lobbyError', 'Bu odada oyun zaten başlamış.');
+      return socket.emit('lobbyError', 'Bu odada oyun zaten başlamış. Yeni oyuncu kabul edilmiyor.');
     }
     if (room.members.length >= 4) {
       return socket.emit('lobbyError', 'Oda dolu (maksimum 4 oyuncu).');
-    }
-    if (room.members.some(m => m.username.toLowerCase() === username.toLowerCase())) {
-      return socket.emit('lobbyError', 'Bu kullanıcı adı zaten alınmış.');
     }
     if (room.members.some(m => m.color === color)) {
       return socket.emit('lobbyError', 'Bu renk zaten başka bir oyuncu tarafından seçilmiş.');
@@ -146,6 +238,7 @@ io.on('connection', (socket) => {
       username,
       color,
       isOwner: false,
+      connected: true,
     });
 
     currentRoom = roomName;
@@ -172,11 +265,9 @@ io.on('connection', (socket) => {
       return socket.emit('lobbyError', 'Oyun zaten başlamış.');
     }
 
-    // Generate board
     const hexes = generateRandomMap();
     const graph = generateBoardGraph(hexes, 65);
 
-    // Create game state from lobby members
     const lobbyPlayers = room.members.map(m => ({
       username: m.username,
       color: PLAYER_COLORS[m.color],
@@ -241,26 +332,56 @@ io.on('connection', (socket) => {
   // ── Disconnect ───────────────────────────────────────
   socket.on('disconnect', () => {
     console.log(`Disconnected: ${socket.id}`);
-    if (currentRoom && rooms[currentRoom]) {
-      const room = rooms[currentRoom];
-      const memberIndex = room.members.findIndex(m => m.socketId === socket.id);
+    if (!currentRoom || !rooms[currentRoom]) return;
 
-      if (memberIndex !== -1) {
-        const wasOwner = room.members[memberIndex].isOwner;
-        room.members.splice(memberIndex, 1);
+    const room = rooms[currentRoom];
+    const member = room.members.find(m => m.socketId === socket.id);
+    if (!member) return;
 
-        // If room is empty, delete it
-        if (room.members.length === 0) {
-          delete rooms[currentRoom];
-          console.log(`Room "${currentRoom}" deleted (empty).`);
-        } else {
-          // If owner left and game hasn't started, transfer ownership
-          if (wasOwner && !room.started && room.members.length > 0) {
-            room.members[0].isOwner = true;
-            console.log(`Ownership of "${currentRoom}" transferred to ${room.members[0].username}`);
+    const roomNameCopy = currentRoom; // Capture for closures
+
+    if (room.started) {
+      // ── Game in progress: mark as disconnected, start 30s timer ──
+      member.connected = false;
+      console.log(`${member.username} disconnected from game in "${roomNameCopy}". Starting 30s timeout.`);
+
+      io.to(roomNameCopy).emit('lobbyUpdate', buildLobbyUpdate(roomNameCopy));
+      io.to(roomNameCopy).emit('playerDisconnected', {
+        username: member.username,
+        timeoutMs: DISCONNECT_TIMEOUT_MS,
+      });
+
+      member.disconnectTimer = setTimeout(() => {
+        console.log(`${member.username} did not reconnect within 30s in "${roomNameCopy}". Skipping their turn.`);
+
+        // Check if it's their turn and skip
+        const state = room.gameState;
+        if (state) {
+          const pid = findPlayerIdByUsername(state, member.username);
+          const currentPid = state.turnOrder[state.currentTurnIndex];
+          if (pid === currentPid) {
+            skipDisconnectedPlayerTurn(roomNameCopy);
           }
-          io.to(currentRoom).emit('lobbyUpdate', buildLobbyUpdate(currentRoom));
         }
+
+        member.disconnectTimer = undefined;
+      }, DISCONNECT_TIMEOUT_MS);
+
+    } else {
+      // ── Lobby phase: remove the member entirely ──
+      const memberIndex = room.members.indexOf(member);
+      const wasOwner = member.isOwner;
+      room.members.splice(memberIndex, 1);
+
+      if (room.members.length === 0) {
+        delete rooms[roomNameCopy];
+        console.log(`Room "${roomNameCopy}" deleted (empty).`);
+      } else {
+        if (wasOwner && room.members.length > 0) {
+          room.members[0].isOwner = true;
+          console.log(`Ownership of "${roomNameCopy}" transferred to ${room.members[0].username}`);
+        }
+        io.to(roomNameCopy).emit('lobbyUpdate', buildLobbyUpdate(roomNameCopy));
       }
     }
   });

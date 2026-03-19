@@ -17,7 +17,7 @@ const COLOR_MAP: Record<string, { label: string; hex: string; emoji: string }> =
 function App() {
   const {
     gameState, diceResult, isConnected, phase, isOwner,
-    roomName, myPlayerId, lobbyState, lobbyError,
+    roomName, myPlayerId, lobbyState, lobbyError, disconnectedPlayer,
     createRoom, joinRoom, startGame, actions
   } = useCatanGame();
 
@@ -293,12 +293,14 @@ function App() {
                 style={{
                   display: 'flex', alignItems: 'center', gap: '12px',
                   padding: '10px 16px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px',
-                  border: m.isOwner ? '1px solid #fbbf24' : '1px solid rgba(255,255,255,0.1)'
+                  border: m.isOwner ? '1px solid #fbbf24' : '1px solid rgba(255,255,255,0.1)',
+                  opacity: m.connected === false ? 0.4 : 1,
                 }}
               >
                 <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: COLOR_MAP[m.color]?.hex || '#888', boxShadow: '0 0 8px rgba(0,0,0,0.5)' }} />
                 <span style={{ flex: 1, fontSize: '1rem', fontWeight: 600 }}>{m.username}</span>
                 {m.isOwner && <span style={{ fontSize: '0.75rem', padding: '2px 8px', background: '#fbbf24', color: '#000', borderRadius: '4px', fontWeight: 700 }}>ODA SAHİBİ</span>}
+                {m.connected === false && <span style={{ fontSize: '0.75rem', padding: '2px 8px', background: '#ef4444', color: '#fff', borderRadius: '4px' }}>Bağlantı Koptu</span>}
               </div>
             ))}
 
@@ -415,10 +417,10 @@ function App() {
       </header>
 
       {/* Main Game Area */}
-      <main className="glass-panel" style={{ flex: 1, width: '100%', maxWidth: '1400px', display: 'flex', overflow: 'hidden' }}>
+      <main className="glass-panel game-main" style={{ flex: 1, width: '100%', maxWidth: '1400px', display: 'flex', overflow: 'hidden' }}>
 
         {/* Left Panel: Players */}
-        <aside style={{ width: '260px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', borderRight: '1px solid rgba(255,255,255,0.1)', overflowY: 'auto' }}>
+        <aside className="game-sidebar" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', borderRight: '1px solid rgba(255,255,255,0.1)', overflowY: 'auto' }}>
           {gameState.turnOrder.map(pid => (
             <PlayerPanel key={pid} player={gameState.players[pid]} isActive={currentPlayer.id === pid} />
           ))}
@@ -500,7 +502,13 @@ function App() {
         </aside>
 
         {/* Right Panel: Board */}
-        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="game-board-area" style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {/* Disconnection Warning Banner */}
+          {disconnectedPlayer && (
+            <div style={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', background: 'rgba(239, 68, 68, 0.85)', padding: '10px 20px', borderRadius: '12px', color: '#fff', fontWeight: 'bold', zIndex: 20, boxShadow: '0 4px 12px rgba(0,0,0,0.4)', fontSize: '0.9rem', textAlign: 'center' }}>
+              ⚠️ {disconnectedPlayer.username} bağlantısı koptu! {Math.round(disconnectedPlayer.timeoutMs / 1000)}s içinde gelmezse sırası atlanacak.
+            </div>
+          )}
           {gameState.turnPhase === 'ROBBER_MOVE' && (
             <div style={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', background: 'rgba(239, 68, 68, 0.9)', padding: '12px 24px', borderRadius: '20px', color: '#fff', fontWeight: 'bold', zIndex: 10, boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}>
               ⚠️ Hırsızı hareket ettirmek için bir altıgen seçin!

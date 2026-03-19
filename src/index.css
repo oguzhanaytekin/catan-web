@@ -108,3 +108,70 @@ button.glass-btn:hover {
   animation: drawRoad 0.4s ease-out forwards;
   stroke-dasharray: 100;
 }
+
+/* ─── Game Layout Classes ─── */
+.game-sidebar {
+  width: 260px;
+  min-width: 200px;
+  flex-shrink: 0;
+}
+
+/* ─── Responsive: Mobile / iOS ─── */
+@media (max-width: 768px) {
+  /* Stack game layout vertically on mobile */
+  .game-main {
+    flex-direction: column-reverse !important;
+    padding: 8px !important;
+  }
+
+  .game-sidebar {
+    width: 100% !important;
+    min-width: unset;
+    max-height: 35vh;
+    border-right: none !important;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    padding: 10px !important;
+    gap: 8px !important;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .game-board-area {
+    min-height: 50vh;
+  }
+
+  /* Reduce glass panel padding on mobile */
+  .glass-panel {
+    padding: 12px;
+    border-radius: 10px;
+  }
+
+  /* Smaller buttons on mobile */
+  button.glass-btn {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+  }
+
+  /* Header adjustments */
+  header.glass-panel {
+    flex-direction: column !important;
+    gap: 10px;
+    align-items: flex-start !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .game-sidebar {
+    max-height: 30vh;
+    padding: 8px !important;
+  }
+
+  .game-board-area {
+    min-height: 55vh;
+  }
+
+  button.glass-btn {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+}

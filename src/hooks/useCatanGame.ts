@@ -7,6 +7,7 @@ export interface LobbyMember {
   username: string;
   color: string;
   isOwner: boolean;
+  connected: boolean;
 }
 
 export interface LobbyState {
@@ -29,6 +30,7 @@ export function useCatanGame() {
   const [myUsername, setMyUsername] = useState('');
   const [lobbyState, setLobbyState] = useState<LobbyState | null>(null);
   const [lobbyError, setLobbyError] = useState<string | null>(null);
+  const [disconnectedPlayer, setDisconnectedPlayer] = useState<{ username: string; timeoutMs: number } | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -63,6 +65,11 @@ export function useCatanGame() {
 
     socket.on('gameState', (newState: GameState) => {
       setGameState(newState);
+    });
+
+    socket.on('playerDisconnected', (data: { username: string; timeoutMs: number }) => {
+      setDisconnectedPlayer(data);
+      setTimeout(() => setDisconnectedPlayer(null), data.timeoutMs + 2000);
     });
 
     return () => {
@@ -126,6 +133,7 @@ export function useCatanGame() {
     myUsername,
     lobbyState,
     lobbyError,
+    disconnectedPlayer,
     // Lobby Actions
     createRoom,
     joinRoom,
