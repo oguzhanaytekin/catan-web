@@ -24,12 +24,14 @@ if (fs.existsSync(distPath)) {
 
 app.use(express.static(distPath));
 
-app.get('*', (req, res) => {
+// Final catch-all for SPA (must be LAST)
+app.use((req, res) => {
   const indexPath = path.join(distPath, 'index.html');
+  console.log(`Fallback: Checking index.html at ${indexPath}`);
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(404).send(`index.html not found in ${distPath}. Current directory: ${process.cwd()}`);
+    res.status(404).send(`Error: index.html not found in dist. Current directory: ${process.cwd()}`);
   }
 });
 
