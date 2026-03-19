@@ -1,42 +1,106 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { GameState } from '../game/gameState';
+import type { GameState, ResourceType } from '../game/gameState';
 import { initialGameState } from '../game/gameState';
-import type { ResourceType } from '../game/gameState';
 import { io, Socket } from 'socket.io-client';
+
+export interface LobbyMember {
+  username: string;
+  color: string;
+  isOwner: boolean;
+}
+
+export interface LobbyState {
+  roomName: string;
+  members: LobbyMember[];
+  started: boolean;
+  takenColors: string[];
+  takenUsernames: string[];
+}
+
+type AppPhase = 'LOGIN' | 'LOBBY' | 'GAME';
 
 export function useCatanGame() {
   const [gameState, setGameState] = useState<GameState>(initialGameState);
-  const [roomId, setRoomId] = useState<string>(''); 
+  const [phase, setPhase] = useState<AppPhase>('LOGIN');
   const [isConnected, setIsConnected] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+  const [roomName, setRoomName] = useState('');
+  const [myPlayerId, setMyPlayerId] = useState('');
+  const [myUsername, setMyUsername] = useState('');
+  const [lobbyState, setLobbyState] = useState<LobbyState | null>(null);
+  const [lobbyError, setLobbyError] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    // Connect to the Node.js Socket.IO server utilizing VITE_API_URL for production (Render)
     const URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001' : '/');
     const socket = io(URL);
     socketRef.current = socket;
 
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
-    socket.on('gameState', (newState: GameState) => setGameState(newState));
+
+    socket.on('lobbyError', (msg: string) => {
+      setLobbyError(msg);
+      // Auto-clear error after 5 seconds
+      setTimeout(() => setLobbyError(null), 5000);
+    });
+
+    socket.on('roomJoined', ({ roomName: rn, isOwner: owner }: { roomName: string; isOwner: boolean }) => {
+      setRoomName(rn);
+      setIsOwner(owner);
+      setPhase('LOBBY');
+      setLobbyError(null);
+    });
+
+    socket.on('lobbyUpdate', (data: LobbyState) => {
+      setLobbyState(data);
+    });
+
+    socket.on('gameStarted', (state: GameState) => {
+      setGameState(state);
+      setPhase('GAME');
+    });
+
+    socket.on('gameState', (newState: GameState) => {
+      setGameState(newState);
+    });
 
     return () => {
       socket.disconnect();
     };
   }, []);
 
-  const joinRoom = useCallback((room: string) => {
-    setRoomId(room);
-    if (socketRef.current) {
-      socketRef.current.emit('joinRoom', room);
+  // Resolve myPlayerId once game starts (match by username)
+  useEffect(() => {
+    if (phase === 'GAME' && gameState.turnOrder.length > 0 && myUsername) {
+      const foundId = gameState.turnOrder.find(pid => gameState.players[pid]?.name === myUsername);
+      if (foundId) setMyPlayerId(foundId);
     }
+  }, [phase, gameState, myUsername]);
+
+  const createRoom = useCallback((roomName: string, password: string, username: string, color: string) => {
+    setMyUsername(username);
+    setLobbyError(null);
+    socketRef.current?.emit('createRoom', { roomName, password, username, color });
   }, []);
 
-  const dispatchAction = useCallback((type: string, payload?: any) => {
-    if (socketRef.current && socketRef.current.connected && roomId !== 'lobby') {
-      socketRef.current.emit('action', { roomId, type, payload });
+  const joinRoom = useCallback((roomName: string, password: string, username: string, color: string) => {
+    setMyUsername(username);
+    setLobbyError(null);
+    socketRef.current?.emit('joinRoom', { roomName, password, username, color });
+  }, []);
+
+  const startGame = useCallback(() => {
+    if (roomName) {
+      socketRef.current?.emit('startGame', { roomName });
     }
-  }, [roomId]);
+  }, [roomName]);
+
+  const dispatchAction = useCallback((type: string, payload?: any) => {
+    if (socketRef.current?.connected && roomName) {
+      socketRef.current.emit('action', { roomName, type, payload });
+    }
+  }, [roomName]);
 
   const rollDice = useCallback(() => dispatchAction('rollDice'), [dispatchAction]);
   const endTurn = useCallback(() => dispatchAction('endTurn'), [dispatchAction]);
@@ -51,11 +115,22 @@ export function useCatanGame() {
   const diceResult = gameState.diceState.rolled ? gameState.diceState.die1 + gameState.diceState.die2 : null;
 
   return {
+    // State
     gameState,
     diceResult,
     isConnected,
-    roomId,
+    phase,
+    isOwner,
+    roomName,
+    myPlayerId,
+    myUsername,
+    lobbyState,
+    lobbyError,
+    // Lobby Actions
+    createRoom,
     joinRoom,
+    startGame,
+    // Game Actions
     actions: {
       rollDice,
       endTurn,
@@ -65,7 +140,7 @@ export function useCatanGame() {
       buyDevCard,
       playKnight,
       moveRobber,
-      tradeWithBank
-    }
+      tradeWithBank,
+    },
   };
 }
