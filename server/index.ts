@@ -11,6 +11,13 @@ import path from 'path';
 const app = express();
 app.use(cors());
 
+// Serve static files from the React build
+app.use(express.static(path.resolve('dist')));
+
+app.get('*', (req, res) => {
+  res.sendFile(path.resolve('dist', 'index.html'));
+});
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
