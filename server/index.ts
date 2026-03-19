@@ -12,10 +12,25 @@ const app = express();
 app.use(cors());
 
 // Serve static files from the React build
-app.use(express.static(path.resolve('dist')));
+const distPath = path.resolve('dist');
+console.log(`Checking dist folder at: ${distPath}`);
+if (fs.existsSync(distPath)) {
+  console.log('Dist folder found!');
+  const files = fs.readdirSync(distPath);
+  console.log(`Files in dist: ${files.join(', ')}`);
+} else {
+  console.error('ERROR: Dist folder NOT found. Build might have failed or ran on wrong directory.');
+}
+
+app.use(express.static(distPath));
 
 app.get('*', (req, res) => {
-  res.sendFile(path.resolve('dist', 'index.html'));
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send(`index.html not found in ${distPath}. Current directory: ${process.cwd()}`);
+  }
 });
 
 const httpServer = createServer(app);
