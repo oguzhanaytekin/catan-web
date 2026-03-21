@@ -18,7 +18,8 @@ function App() {
   const {
     gameState, diceResult, isConnected, phase, isOwner,
     roomName, myPlayerId, myUsername, lobbyState, lobbyError, authError, disconnectedPlayer,
-    register, login, createRoom, joinRoom, startGame, actions
+    roomList, reconnectRoom,
+    register, login, logout, createRoom, joinRoom, leaveRoom, fetchRooms, startGame, actions
   } = useCatanGame();
 
   // ─── Auth State ────────────────────────────────────
@@ -157,29 +158,43 @@ function App() {
           )}
 
           {/* Welcome User */}
-          <p style={{ textAlign: 'center', margin: 0, fontSize: '1rem', color: '#fbbf24' }}>
-            Hoş geldin, <strong>{myUsername}</strong>!
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <p style={{ margin: 0, fontSize: '1rem', color: '#fbbf24' }}>
+              Hoş geldin, <strong>{myUsername}</strong>!
+            </p>
+            <button className="glass-btn" onClick={logout} style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.2)' }}>🚪 Çıkış</button>
+          </div>
 
           {/* Mode Choice */}
           {lobbyMode === 'choose' && (
-            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-              <button
-                className="glass-btn"
-                onClick={() => setLobbyMode('create')}
-                disabled={!isConnected || !myUsername.trim()}
-                style={{ flex: 1, padding: '14px', fontSize: '1rem', background: myUsername.trim() && isConnected ? 'rgba(34, 197, 94, 0.25)' : undefined, border: '1px solid rgba(34, 197, 94, 0.5)' }}
-              >
-                🏠 Oda Kur
-              </button>
-              <button
-                className="glass-btn"
-                onClick={() => setLobbyMode('join')}
-                disabled={!isConnected || !myUsername.trim()}
-                style={{ flex: 1, padding: '14px', fontSize: '1rem', background: myUsername.trim() && isConnected ? 'rgba(59, 130, 246, 0.25)' : undefined, border: '1px solid rgba(59, 130, 246, 0.5)' }}
-              >
-                🚪 Odaya Katıl
-              </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px' }}>
+              {reconnectRoom && (
+                <button
+                  className="glass-btn"
+                  onClick={() => joinRoom(reconnectRoom.roomName, '', 'red')}
+                  style={{ padding: '14px', fontSize: '1rem', background: 'rgba(234, 179, 8, 0.25)', border: '1px solid rgba(234, 179, 8, 0.5)' }}
+                >
+                  ⚡ Odaya Geri Dön ({reconnectRoom.roomName})
+                </button>
+              )}
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  className="glass-btn"
+                  onClick={() => setLobbyMode('create')}
+                  disabled={!isConnected || !myUsername.trim()}
+                  style={{ flex: 1, padding: '14px', fontSize: '1rem', background: myUsername.trim() && isConnected ? 'rgba(34, 197, 94, 0.25)' : undefined, border: '1px solid rgba(34, 197, 94, 0.5)' }}
+                >
+                  🏠 Oda Kur
+                </button>
+                <button
+                  className="glass-btn"
+                  onClick={() => { setLobbyMode('join'); fetchRooms(); }}
+                  disabled={!isConnected || !myUsername.trim()}
+                  style={{ flex: 1, padding: '14px', fontSize: '1rem', background: myUsername.trim() && isConnected ? 'rgba(59, 130, 246, 0.25)' : undefined, border: '1px solid rgba(59, 130, 246, 0.5)' }}
+                >
+                  🚪 Katıl
+                </button>
+              </div>
             </div>
           )}
 
@@ -258,7 +273,23 @@ function App() {
           {lobbyMode === 'join' && (
             <>
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '12px' }}>
-                <p style={{ margin: '0 0 8px', fontSize: '0.9rem', color: '#60a5fa', fontWeight: 600 }}>🚪 Odaya Katıl</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <p style={{ margin: 0, fontSize: '0.9rem', color: '#60a5fa', fontWeight: 600 }}>🚪 Odaya Katıl</p>
+                  <button className="glass-btn" onClick={fetchRooms} style={{ padding: '4px 8px', fontSize: '0.7rem' }}>🔄 Yenile</button>
+                </div>
+
+                <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px', background: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '8px' }}>
+                  {roomList.length > 0 ? roomList.filter(r => !r.started).map(r => (
+                    <div key={r.roomName} onClick={() => { setFormRoomName(r.roomName); if(!r.hasPassword) setFormPassword(''); }}
+                         style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: formRoomName === r.roomName ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.05)', borderRadius: '4px', cursor: 'pointer', border: formRoomName === r.roomName ? '1px solid #60a5fa' : '1px solid transparent' }}>
+                      <span style={{ fontWeight: 'bold' }}>{r.roomName}</span>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>👤 {r.playerCount}/4 {r.hasPassword ? '🔒' : '🔓'}</span>
+                    </div>
+                  )) : (
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', margin: 0 }}>Aktif oda bulunamadı.</p>
+                  )}
+                </div>
+
                 <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Oda Adı:</label>
                 <input
                   type="text"
@@ -409,6 +440,8 @@ function App() {
               ⏳ Oda sahibinin oyunu başlatması bekleniyor...
             </div>
           )}
+          
+          <button className="glass-btn" onClick={leaveRoom} style={{ marginTop: '8px', padding: '10px', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.5)' }}>🚪 Odadan Ayrıl</button>
         </div>
       </div>
     );
@@ -481,6 +514,8 @@ function App() {
                 ⏳ Sıranı Bekle...
               </div>
             )}
+            
+            <button className="glass-btn" onClick={leaveRoom} style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.2)', marginLeft: '12px' }}>🚪 Ayrıl</button>
           </div>
         </div>
       </header>

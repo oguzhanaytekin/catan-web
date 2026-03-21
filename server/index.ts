@@ -116,7 +116,7 @@ function skipDisconnectedPlayerTurn(roomName: string) {
   const room = rooms[roomName];
   if (!room || !room.gameState) return;
 
-  const state = room.gameState;
+  let state = room.gameState;
   const currentPid = state.turnOrder[state.currentTurnIndex];
   const currentMember = room.members.find(m => {
     const pid = findPlayerIdByUsername(state, m.username);
@@ -126,6 +126,28 @@ function skipDisconnectedPlayerTurn(roomName: string) {
   // Only skip if the current player is disconnected
   if (currentMember && !currentMember.connected) {
     console.log(`Auto-skipping turn for disconnected player "${currentMember.username}" in room "${roomName}"`);
+    
+    // Auto-build for setup phase if needed
+    if (state.turnPhase === 'SETUP_ROUND_1' || state.turnPhase === 'SETUP_ROUND_2') {
+      const expectedCount = state.turnPhase === 'SETUP_ROUND_1' ? 1 : 2;
+      const playerSettlements = Object.values(state.buildings).filter(b => b.playerId === currentPid).length;
+      if (playerSettlements < expectedCount) {
+        const validNodes = state.board!.graph.nodes.filter(n => {
+          if (state.buildings[n.id]) return false;
+          const connectedEdges = state.board!.graph.edges.filter(e => e.node1.id === n.id || e.node2.id === n.id);
+          const adjacentNodeIds = connectedEdges.map(e => e.node1.id === n.id ? e.node2.id : e.node1.id);
+          return !adjacentNodeIds.some(adj => state.buildings[adj]);
+        });
+        if (validNodes.length > 0) state = gameEngine.buildSettlement(state, validNodes[Math.floor(Math.random() * validNodes.length)].id, currentPid);
+      }
+      const playerRoads = Object.values(state.roads).filter(r => r === currentPid).length;
+      if (playerRoads < expectedCount) {
+        const mySettlements = Object.entries(state.buildings).filter(([_, b]) => b.playerId === currentPid).map(([id]) => id);
+        const validEdges = state.board!.graph.edges.filter(e => !state.roads[e.id] && (mySettlements.includes(e.node1.id) || mySettlements.includes(e.node2.id)));
+        if (validEdges.length > 0) state = gameEngine.buildRoad(state, validEdges[Math.floor(Math.random() * validEdges.length)].id, currentPid);
+      }
+    }
+
     let newState = gameEngine.endTurn(state);
     // If we're in a phase that doesn't allow endTurn (e.g. need to roll), force through
     if (newState === state) {
@@ -190,8 +212,63 @@ io.on('connection', (socket) => {
       return socket.emit('authError', 'Geçersiz kullanıcı adı veya şifre.');
     }
     authenticatedUser = username;
-    socket.emit('authSuccess', { username });
+
+    let activeRoom: string | null = null;
+    let roomStarted = false;
+    for (const rName in rooms) {
+      if (rooms[rName].members.some(m => m.username === username)) {
+        activeRoom = rName;
+        roomStarted = rooms[rName].started;
+        break;
+      }
+    }
+
+    socket.emit('authSuccess', { username, activeRoom, roomStarted });
     console.log(`User logged in: ${username}`);
+  });
+
+  // ── Rooms Listing ────────────────────────────────────
+  socket.on('getRooms', () => {
+    const list = Object.keys(rooms).map(rName => {
+      const r = rooms[rName];
+      return {
+        roomName: rName,
+        playerCount: r.members.length,
+        hasPassword: !!r.password,
+        started: r.started,
+      };
+    });
+    socket.emit('roomList', list);
+  });
+
+  // ── Leave Room ───────────────────────────────────────
+  socket.on('leaveRoom', () => {
+    if (!currentRoom || !rooms[currentRoom]) return;
+    const roomNameCopy = currentRoom;
+    const room = rooms[roomNameCopy];
+    const memberIndex = room.members.findIndex(m => m.socketId === socket.id);
+    if (memberIndex !== -1) {
+      const member = room.members[memberIndex];
+      const wasOwner = member.isOwner;
+      
+      if (room.started) {
+        member.connected = false;
+        io.to(roomNameCopy).emit('lobbyUpdate', buildLobbyUpdate(roomNameCopy));
+      } else {
+        room.members.splice(memberIndex, 1);
+        if (room.members.length === 0) {
+          delete rooms[roomNameCopy];
+        } else {
+          if (wasOwner && room.members.length > 0) {
+            room.members[0].isOwner = true;
+          }
+          io.to(roomNameCopy).emit('lobbyUpdate', buildLobbyUpdate(roomNameCopy));
+        }
+      }
+    }
+    socket.leave(roomNameCopy);
+    currentRoom = null;
+    socket.emit('leftRoom');
   });
 
   // ── Create Room ──────────────────────────────────────
@@ -251,9 +328,6 @@ io.on('connection', (socket) => {
     if (!room) {
       return socket.emit('lobbyError', 'Bu isimde bir oda bulunamadı.');
     }
-    if (room.password !== password) {
-      return socket.emit('lobbyError', 'Oda şifresi yanlış.');
-    }
 
     const existingMember = room.members.find(m => m.username === username);
 
@@ -289,6 +363,9 @@ io.on('connection', (socket) => {
     }
 
     // ── NEW PLAYER joining ──
+    if (room.password !== password) {
+      return socket.emit('lobbyError', 'Oda şifresi yanlış.');
+    }
     if (room.started) {
       return socket.emit('lobbyError', 'Bu odada oyun zaten başlamış. Yeni oyuncu kabul edilmiyor.');
     }

@@ -18,6 +18,13 @@ export interface LobbyState {
   takenUsernames: string[];
 }
 
+export interface RoomInfo {
+  roomName: string;
+  playerCount: number;
+  hasPassword: boolean;
+  started: boolean;
+}
+
 type AppPhase = 'AUTH' | 'LOGIN' | 'LOBBY' | 'GAME';
 
 export function useCatanGame() {
@@ -33,6 +40,8 @@ export function useCatanGame() {
   const [lobbyError, setLobbyError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [disconnectedPlayer, setDisconnectedPlayer] = useState<{ username: string; timeoutMs: number } | null>(null);
+  const [roomList, setRoomList] = useState<RoomInfo[]>([]);
+  const [reconnectRoom, setReconnectRoom] = useState<{roomName: string, started: boolean} | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -48,11 +57,14 @@ export function useCatanGame() {
       setTimeout(() => setAuthError(null), 5000);
     });
 
-    socket.on('authSuccess', ({ username }: { username: string }) => {
+    socket.on('authSuccess', ({ username, activeRoom, roomStarted }: any) => {
       setMyUsername(username);
       setIsAuthenticated(true);
       setPhase('LOGIN');
       setAuthError(null);
+      if (activeRoom) {
+        setReconnectRoom({ roomName: activeRoom, started: roomStarted });
+      }
     });
 
     socket.on('lobbyError', (msg: string) => {
@@ -70,6 +82,17 @@ export function useCatanGame() {
 
     socket.on('lobbyUpdate', (data: LobbyState) => {
       setLobbyState(data);
+    });
+
+    socket.on('roomList', (list: RoomInfo[]) => {
+      setRoomList(list);
+    });
+
+    socket.on('leftRoom', () => {
+      setPhase('LOGIN');
+      setRoomName('');
+      setLobbyState(null);
+      setGameState(initialGameState);
     });
 
     socket.on('gameStarted', (state: GameState) => {
@@ -125,6 +148,24 @@ export function useCatanGame() {
     }
   }, [roomName]);
 
+  const fetchRooms = useCallback(() => {
+    socketRef.current?.emit('getRooms');
+  }, []);
+
+  const leaveRoom = useCallback(() => {
+    socketRef.current?.emit('leaveRoom');
+  }, []);
+
+  const logout = useCallback(() => {
+    socketRef.current?.disconnect();
+    setTimeout(() => {
+      socketRef.current?.connect();
+      setPhase('AUTH');
+      setIsAuthenticated(false);
+      setMyUsername('');
+    }, 100);
+  }, []);
+
   const dispatchAction = useCallback((type: string, payload?: any) => {
     if (socketRef.current?.connected && roomName) {
       socketRef.current.emit('action', { roomName, type, payload });
@@ -158,11 +199,16 @@ export function useCatanGame() {
     lobbyError,
     authError,
     disconnectedPlayer,
+    roomList,
+    reconnectRoom,
     // Actions
     register,
     login,
+    logout,
     createRoom,
     joinRoom,
+    leaveRoom,
+    fetchRooms,
     startGame,
     // Game Actions
     actions: {
