@@ -113,72 +113,8 @@ function findPlayerIdByUsername(state: GameState, username: string): string | nu
 
 // Helper: skip disconnected player's turn
 function skipDisconnectedPlayerTurn(roomName: string) {
-  const room = rooms[roomName];
-  if (!room || !room.gameState) return;
-
-  let state = room.gameState;
-  const currentPid = state.turnOrder[state.currentTurnIndex];
-  const currentMember = room.members.find(m => {
-    const pid = findPlayerIdByUsername(state, m.username);
-    return pid === currentPid;
-  });
-
-  // Only skip if the current player is disconnected
-  if (currentMember && !currentMember.connected) {
-    console.log(`Auto-skipping turn for disconnected player "${currentMember.username}" in room "${roomName}"`);
-    
-    // Auto-build for setup phase if needed
-    if (state.turnPhase === 'SETUP_ROUND_1' || state.turnPhase === 'SETUP_ROUND_2') {
-      const expectedCount = state.turnPhase === 'SETUP_ROUND_1' ? 1 : 2;
-      const playerSettlements = Object.values(state.buildings).filter(b => b.playerId === currentPid).length;
-      if (playerSettlements < expectedCount) {
-        const validNodes = state.board!.graph.nodes.filter(n => {
-          if (state.buildings[n.id]) return false;
-          const connectedEdges = state.board!.graph.edges.filter(e => e.node1.id === n.id || e.node2.id === n.id);
-          const adjacentNodeIds = connectedEdges.map(e => e.node1.id === n.id ? e.node2.id : e.node1.id);
-          return !adjacentNodeIds.some(adj => state.buildings[adj]);
-        });
-        if (validNodes.length > 0) state = gameEngine.buildSettlement(state, validNodes[Math.floor(Math.random() * validNodes.length)].id, currentPid);
-      }
-      const playerRoads = Object.values(state.roads).filter(r => r === currentPid).length;
-      if (playerRoads < expectedCount) {
-        const mySettlements = Object.entries(state.buildings).filter(([_, b]) => b.playerId === currentPid).map(([id]) => id);
-        const validEdges = state.board!.graph.edges.filter(e => !state.roads[e.id] && (mySettlements.includes(e.node1.id) || mySettlements.includes(e.node2.id)));
-        if (validEdges.length > 0) state = gameEngine.buildRoad(state, validEdges[Math.floor(Math.random() * validEdges.length)].id, currentPid);
-      }
-    }
-
-    let newState = gameEngine.endTurn(state);
-    // If we're in a phase that doesn't allow endTurn (e.g. need to roll), force through
-    if (newState === state) {
-      // Force roll dice if needed
-      if (state.turnPhase === 'ROLL') {
-        newState = gameEngine.rollDice(state);
-        if (newState !== state) {
-          newState = gameEngine.endTurn(newState);
-        }
-      }
-      // If still stuck (e.g. ROBBER_MOVE), just move to next player
-      if (newState === state) {
-        const nextIndex = (state.currentTurnIndex + 1) % state.turnOrder.length;
-        newState = {
-          ...state,
-          currentTurnIndex: nextIndex,
-          turnPhase: 'ROLL',
-          diceState: { die1: 1, die2: 1, rolled: false },
-        };
-      }
-    }
-    room.gameState = newState;
-    io.to(roomName).emit('gameState', newState);
-
-    // Check if the NEXT player is also disconnected, and schedule skip for them too
-    const nextPid = newState.turnOrder[newState.currentTurnIndex];
-    const nextMember = room.members.find(m => findPlayerIdByUsername(newState, m.username) === nextPid);
-    if (nextMember && !nextMember.connected) {
-      setTimeout(() => skipDisconnectedPlayerTurn(roomName), 2000);
-    }
-  }
+  // DISABLED: User requested to stop automatic skips and moves
+  // This prevents the game from playing automatically for disconnected players, especially during setup phases
 }
 
 // ─── Socket Handlers ─────────────────────────────────────
@@ -320,8 +256,8 @@ io.on('connection', (socket) => {
     }
     const username = authenticatedUser;
 
-    if (!roomName || !password || !color) {
-      return socket.emit('lobbyError', 'Tüm alanlar doldurulmalıdır.');
+    if (!roomName) {
+      return socket.emit('lobbyError', 'Oda adı gereklidir.');
     }
 
     const room = rooms[roomName];
@@ -363,6 +299,10 @@ io.on('connection', (socket) => {
     }
 
     // ── NEW PLAYER joining ──
+    if (!password || !color) {
+      return socket.emit('lobbyError', 'Tüm alanlar (şifre, renk) doldurulmalıdır.');
+    }
+
     if (room.password !== password) {
       return socket.emit('lobbyError', 'Oda şifresi yanlış.');
     }
@@ -404,8 +344,8 @@ io.on('connection', (socket) => {
     if (!member || !member.isOwner) {
       return socket.emit('lobbyError', 'Sadece oda sahibi oyunu başlatabilir.');
     }
-    if (room.members.length < 3) {
-      return socket.emit('lobbyError', 'Oyun başlatmak için en az 3 oyuncu gerekli.');
+    if (room.members.length < 2) {
+      return socket.emit('lobbyError', 'Oyun başlatmak için en az 2 oyuncu gerekli.');
     }
     if (room.started) {
       return socket.emit('lobbyError', 'Oyun zaten başlamış.');

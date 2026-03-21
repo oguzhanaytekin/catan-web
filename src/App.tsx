@@ -49,13 +49,6 @@ function App() {
   }));
 
   useGesture({
-    onDrag: ({ offset: [dx, dy], buttons }: any) => {
-      if (buttons === 2 || (buttons === 0 && dx !== 0)) { // Right click or touch drag
-        api.start({ rotateZ: -45 + dx * 0.5, rotateX: Math.max(0, Math.min(80, 60 - dy * 0.5)) });
-      } else {
-        api.start({ x: dx, y: dy });
-      }
-    },
     onWheel: ({ event, delta: [, dy] }: any) => {
       event.preventDefault();
       api.start({ scale: Math.max(0.3, Math.min(3, scale.get() - dy * 0.005)) });
@@ -66,7 +59,6 @@ function App() {
   }, {
     target: containerRef,
     eventOptions: { passive: false },
-    drag: { from: () => [x.get(), y.get()], filterTaps: true },
     pinch: { from: () => [scale.get(), 0] }
   });
 
@@ -365,7 +357,7 @@ function App() {
   // ═══════════════════════════════════════════════════
   if (phase === 'LOBBY') {
     const members = lobbyState?.members || [];
-    const canStart = isOwner && members.length >= 3;
+    const canStart = isOwner && members.length >= 2;
 
     return (
       <div style={{ padding: '24px', width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -433,7 +425,7 @@ function App() {
                 color: canStart ? '#4ade80' : 'rgba(255,255,255,0.3)',
               }}
             >
-              {canStart ? '🚀 Oyunu Başlat' : `⏳ En az 3 oyuncu gerekli (${members.length}/3)`}
+              {canStart ? '🚀 Oyunu Başlat' : `⏳ En az 2 oyuncu gerekli (${members.length}/2)`}
             </button>
           ) : (
             <div style={{ textAlign: 'center', padding: '14px', color: '#fbbf24', fontSize: '1rem' }}>
