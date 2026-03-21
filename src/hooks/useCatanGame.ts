@@ -18,18 +18,20 @@ export interface LobbyState {
   takenUsernames: string[];
 }
 
-type AppPhase = 'LOGIN' | 'LOBBY' | 'GAME';
+type AppPhase = 'AUTH' | 'LOGIN' | 'LOBBY' | 'GAME';
 
 export function useCatanGame() {
   const [gameState, setGameState] = useState<GameState>(initialGameState);
-  const [phase, setPhase] = useState<AppPhase>('LOGIN');
+  const [phase, setPhase] = useState<AppPhase>('AUTH');
   const [isConnected, setIsConnected] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [roomName, setRoomName] = useState('');
   const [myPlayerId, setMyPlayerId] = useState('');
   const [myUsername, setMyUsername] = useState('');
   const [lobbyState, setLobbyState] = useState<LobbyState | null>(null);
   const [lobbyError, setLobbyError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [disconnectedPlayer, setDisconnectedPlayer] = useState<{ username: string; timeoutMs: number } | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
@@ -40,6 +42,18 @@ export function useCatanGame() {
 
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
+
+    socket.on('authError', (msg: string) => {
+      setAuthError(msg);
+      setTimeout(() => setAuthError(null), 5000);
+    });
+
+    socket.on('authSuccess', ({ username }: { username: string }) => {
+      setMyUsername(username);
+      setIsAuthenticated(true);
+      setPhase('LOGIN');
+      setAuthError(null);
+    });
 
     socket.on('lobbyError', (msg: string) => {
       setLobbyError(msg);
@@ -85,16 +99,24 @@ export function useCatanGame() {
     }
   }, [phase, gameState, myUsername]);
 
-  const createRoom = useCallback((roomName: string, password: string, username: string, color: string) => {
-    setMyUsername(username);
-    setLobbyError(null);
-    socketRef.current?.emit('createRoom', { roomName, password, username, color });
+  const register = useCallback((username: string, password: string) => {
+    setAuthError(null);
+    socketRef.current?.emit('register', { username, password });
   }, []);
 
-  const joinRoom = useCallback((roomName: string, password: string, username: string, color: string) => {
-    setMyUsername(username);
+  const login = useCallback((username: string, password: string) => {
+    setAuthError(null);
+    socketRef.current?.emit('login', { username, password });
+  }, []);
+
+  const createRoom = useCallback((roomName: string, password: string, color: string) => {
     setLobbyError(null);
-    socketRef.current?.emit('joinRoom', { roomName, password, username, color });
+    socketRef.current?.emit('createRoom', { roomName, password, color });
+  }, []);
+
+  const joinRoom = useCallback((roomName: string, password: string, color: string) => {
+    setLobbyError(null);
+    socketRef.current?.emit('joinRoom', { roomName, password, color });
   }, []);
 
   const startGame = useCallback(() => {
@@ -126,6 +148,7 @@ export function useCatanGame() {
     gameState,
     diceResult,
     isConnected,
+    isAuthenticated,
     phase,
     isOwner,
     roomName,
@@ -133,8 +156,11 @@ export function useCatanGame() {
     myUsername,
     lobbyState,
     lobbyError,
+    authError,
     disconnectedPlayer,
-    // Lobby Actions
+    // Actions
+    register,
+    login,
     createRoom,
     joinRoom,
     startGame,

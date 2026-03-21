@@ -8,7 +8,7 @@ interface PlayerPanelProps {
 
 export const PlayerPanel: React.FC<PlayerPanelProps> = ({ player, isActive }) => {
   return (
-    <div className={`glass-panel ${isActive ? 'active-player' : ''}`} style={{ 
+    <div className={`glass-panel player-panel ${isActive ? 'active-player' : ''}`} style={{ 
       padding: '16px', 
       minWidth: '220px',
       border: isActive ? `2px solid ${player.color}` : '1px solid rgba(255,255,255,0.1)',
@@ -25,20 +25,20 @@ export const PlayerPanel: React.FC<PlayerPanelProps> = ({ player, isActive }) =>
       </div>
       
       {/* Resources */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', fontSize: '0.9rem' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '6px 4px', borderRadius: '4px' }}>
+      <div className="resources" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', fontSize: '0.9rem' }}>
+        <div className="res-box" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '6px 4px', borderRadius: '4px' }}>
           <span style={{ fontSize: '1.2rem', marginBottom: '4px' }}>🌲</span>
           <strong style={{ color: player.resources.wood > 0 ? '#fff' : '#64748b' }}>{player.resources.wood}</strong>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '6px 4px', borderRadius: '4px' }}>
+        <div className="res-box" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '6px 4px', borderRadius: '4px' }}>
           <span style={{ fontSize: '1.2rem', marginBottom: '4px' }}>🧱</span>
           <strong style={{ color: player.resources.brick > 0 ? '#fff' : '#64748b' }}>{player.resources.brick}</strong>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '6px 4px', borderRadius: '4px' }}>
+        <div className="res-box" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '6px 4px', borderRadius: '4px' }}>
           <span style={{ fontSize: '1.2rem', marginBottom: '4px' }}>🌾</span>
           <strong style={{ color: player.resources.wheat > 0 ? '#fff' : '#64748b' }}>{player.resources.wheat}</strong>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '6px 4px', borderRadius: '4px' }}>
+        <div className="res-box" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '6px 4px', borderRadius: '4px' }}>
           <span style={{ fontSize: '1.2rem', marginBottom: '4px' }}>🐑</span>
           <strong style={{ color: player.resources.sheep > 0 ? '#fff' : '#64748b' }}>{player.resources.sheep}</strong>
         </div>

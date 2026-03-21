@@ -10,13 +10,18 @@ import fs from 'fs';
 import path from 'path';
 
 // ─── Types ───────────────────────────────────────────────
+interface User {
+  username: string;
+  passwordHash: string;
+}
+
 interface RoomMember {
   socketId: string;
   username: string;
   color: string;
   isOwner: boolean;
-  connected: boolean;         // Is this member currently connected?
-  disconnectTimer?: ReturnType<typeof setTimeout>; // 30s timeout handle
+  connected: boolean;
+  disconnectTimer?: ReturnType<typeof setTimeout>;
 }
 
 interface RoomData {
@@ -42,6 +47,33 @@ const io = new Server(httpServer, {
   cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 
+// ─── User Storage ────────────────────────────────────────
+const USERS_FILE = 'users.json';
+let users: Record<string, User> = {};
+
+if (fs.existsSync(USERS_FILE)) {
+  try {
+    const data = fs.readFileSync(USERS_FILE, 'utf8');
+    users = JSON.parse(data);
+  } catch (e) {
+    console.error('Error loading users.json:', e);
+  }
+}
+
+function saveUsers() {
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+}
+
+function hashPassword(password: string) {
+  // Simple build-in hash for demonstration
+  return path.join(password, 'salt'); // Placeholder or use crypto
+}
+
+import crypto from 'crypto';
+function safeHash(password: string) {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
+
 // ─── Room Storage ────────────────────────────────────────
 const rooms: Record<string, RoomData> = {};
 
@@ -52,9 +84,8 @@ const PLAYER_COLORS: Record<string, string> = {
   orange: '#f97316',
 };
 
-const DISCONNECT_TIMEOUT_MS = 30_000; // 30 seconds
+const DISCONNECT_TIMEOUT_MS = 30_000;
 
-// Helper: build sanitized lobby info to send to clients
 function buildLobbyUpdate(roomName: string) {
   const room = rooms[roomName];
   if (!room) return null;
@@ -133,12 +164,46 @@ io.on('connection', (socket) => {
   console.log(`Connected: ${socket.id}`);
 
   let currentRoom: string | null = null;
+  let authenticatedUser: string | null = null;
+
+  // ── Auth ─────────────────────────────────────────────
+  socket.on('register', ({ username, password }) => {
+    if (!username || !password) {
+      return socket.emit('authError', 'Kullanıcı adı ve şifre gereklidir.');
+    }
+    if (users[username]) {
+      return socket.emit('authError', 'Bu kullanıcı adı zaten mevcut.');
+    }
+    users[username] = {
+      username,
+      passwordHash: safeHash(password),
+    };
+    saveUsers();
+    authenticatedUser = username;
+    socket.emit('authSuccess', { username });
+    console.log(`User registered: ${username}`);
+  });
+
+  socket.on('login', ({ username, password }) => {
+    const user = users[username];
+    if (!user || user.passwordHash !== safeHash(password)) {
+      return socket.emit('authError', 'Geçersiz kullanıcı adı veya şifre.');
+    }
+    authenticatedUser = username;
+    socket.emit('authSuccess', { username });
+    console.log(`User logged in: ${username}`);
+  });
 
   // ── Create Room ──────────────────────────────────────
-  socket.on('createRoom', ({ roomName, password, username, color }: {
-    roomName: string; password: string; username: string; color: string;
+  socket.on('createRoom', ({ roomName, password, color }: {
+    roomName: string; password: string; color: string;
   }) => {
-    if (!roomName || !password || !username || !color) {
+    if (!authenticatedUser) {
+      return socket.emit('lobbyError', 'Önce giriş yapmalısınız.');
+    }
+    const username = authenticatedUser;
+
+    if (!roomName || !password || !color) {
       return socket.emit('lobbyError', 'Tüm alanlar doldurulmalıdır.');
     }
     if (rooms[roomName]) {
@@ -170,10 +235,15 @@ io.on('connection', (socket) => {
   });
 
   // ── Join Room (also handles Reconnection) ────────────
-  socket.on('joinRoom', ({ roomName, password, username, color }: {
-    roomName: string; password: string; username: string; color: string;
+  socket.on('joinRoom', ({ roomName, password, color }: {
+    roomName: string; password: string; color: string;
   }) => {
-    if (!roomName || !password || !username || !color) {
+    if (!authenticatedUser) {
+      return socket.emit('lobbyError', 'Önce giriş yapmalısınız.');
+    }
+    const username = authenticatedUser;
+
+    if (!roomName || !password || !color) {
       return socket.emit('lobbyError', 'Tüm alanlar doldurulmalıdır.');
     }
 
@@ -185,8 +255,7 @@ io.on('connection', (socket) => {
       return socket.emit('lobbyError', 'Oda şifresi yanlış.');
     }
 
-    // ── RECONNECTION: Check if this username already exists in the room ──
-    const existingMember = room.members.find(m => m.username.toLowerCase() === username.toLowerCase());
+    const existingMember = room.members.find(m => m.username === username);
 
     if (existingMember) {
       // Player is reconnecting

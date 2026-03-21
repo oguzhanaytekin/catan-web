@@ -116,6 +116,10 @@ button.glass-btn:hover {
   flex-shrink: 0;
 }
 
+.mobile-fab {
+  display: none !important;
+}
+
 /* ─── Responsive: Mobile / iOS ─── */
 @media (max-width: 768px) {
   /* Stack game layout vertically on mobile */
@@ -157,6 +161,58 @@ button.glass-btn:hover {
     flex-direction: column !important;
     gap: 10px;
     align-items: flex-start !important;
+  }
+
+  /* Hide default header actions on mobile to show FAB instead */
+  .header-actions {
+    display: none !important;
+  }
+
+  /* Mobile FAB (Floating Action Bar) */
+  .mobile-fab {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(255,255,255,0.2);
+    padding: 10px 8px;
+    gap: 8px;
+    z-index: 1000;
+    justify-content: space-around;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.6);
+  }
+  
+  .mobile-fab button {
+    flex: 1;
+    font-size: 0.85rem;
+    padding: 12px 4px;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    line-height: 1.1;
+  }
+
+  /* Compact Player Panel */
+  .player-panel {
+    min-width: unset !important;
+    padding: 10px !important;
+    gap: 8px !important;
+  }
+  .player-panel strong {
+    font-size: 0.95rem !important;
+  }
+  .player-panel .resources .res-box {
+    padding: 4px 2px !important;
+  }
+  .player-panel .resources span {
+    font-size: 1rem !important;
+    margin-bottom: 2px !important;
   }
 }
 

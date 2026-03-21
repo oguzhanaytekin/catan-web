@@ -17,16 +17,23 @@ const COLOR_MAP: Record<string, { label: string; hex: string; emoji: string }> =
 function App() {
   const {
     gameState, diceResult, isConnected, phase, isOwner,
-    roomName, myPlayerId, lobbyState, lobbyError, disconnectedPlayer,
-    createRoom, joinRoom, startGame, actions
+    roomName, myPlayerId, myUsername, lobbyState, lobbyError, authError, disconnectedPlayer,
+    register, login, createRoom, joinRoom, startGame, actions
   } = useCatanGame();
 
+  // ─── Auth State ────────────────────────────────────
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authUsername, setAuthUsername] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+
   // ─── Login / Lobby Form State ──────────────────────
-  const [username, setUsername] = useState('');
   const [lobbyMode, setLobbyMode] = useState<'choose' | 'create' | 'join'>('choose');
   const [formRoomName, setFormRoomName] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [selectedColor, setSelectedColor] = useState('');
+
+  // ─── Mobile UI State ────────────────────────────────
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // ─── Game UI State ─────────────────────────────────
   const [buildingMode, setBuildingMode] = useState<'road' | 'settlement' | 'city' | null>(null);
@@ -42,7 +49,7 @@ function App() {
 
   useGesture({
     onDrag: ({ offset: [dx, dy], buttons }: any) => {
-      if (buttons === 2) {
+      if (buttons === 2 || (buttons === 0 && dx !== 0)) { // Right click or touch drag
         api.start({ rotateZ: -45 + dx * 0.5, rotateX: Math.max(0, Math.min(80, 60 - dy * 0.5)) });
       } else {
         api.start({ x: dx, y: dy });
@@ -51,12 +58,80 @@ function App() {
     onWheel: ({ event, delta: [, dy] }: any) => {
       event.preventDefault();
       api.start({ scale: Math.max(0.3, Math.min(3, scale.get() - dy * 0.005)) });
+    },
+    onPinch: ({ offset: [d] }: any) => {
+      api.start({ scale: Math.max(0.3, Math.min(3, d)) });
     }
   }, {
     target: containerRef,
     eventOptions: { passive: false },
-    drag: { from: () => [x.get(), y.get()], pointerButtons: [1, 2] }
+    drag: { from: () => [x.get(), y.get()], filterTaps: true },
+    pinch: { from: () => [scale.get(), 0] }
   });
+
+  // ═══════════════════════════════════════════════════
+  // AUTH PHASE — Login / Register
+  // ═══════════════════════════════════════════════════
+  if (phase === 'AUTH') {
+    return (
+      <div style={{ padding: '24px', width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="glass-panel" style={{ width: '400px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h1 style={{ textAlign: 'center', margin: 0, fontSize: '2.5rem', fontWeight: 800, textShadow: '0 2px 8px rgba(0,0,0,0.5)', letterSpacing: '3px' }}>CATAN</h1>
+          
+          <div style={{ display: 'flex', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '4px', borderRadius: '10px' }}>
+            <button 
+              className="glass-btn" 
+              style={{ flex: 1, background: authMode === 'login' ? 'rgba(255,255,255,0.1)' : 'transparent', border: 'none' }}
+              onClick={() => setAuthMode('login')}
+            >Giriş Yap</button>
+            <button 
+              className="glass-btn" 
+              style={{ flex: 1, background: authMode === 'register' ? 'rgba(255,255,255,0.1)' : 'transparent', border: 'none' }}
+              onClick={() => setAuthMode('register')}
+            >Kayıt Ol</button>
+          </div>
+
+          {authError && (
+            <div style={{ padding: '10px 14px', background: 'rgba(239, 68, 68, 0.25)', border: '1px solid #ef4444', borderRadius: '8px', color: '#fca5a5', fontSize: '0.9rem', textAlign: 'center' }}>
+              ⚠️ {authError}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Kullanıcı Adı</label>
+              <input
+                type="text"
+                placeholder="Kullanıcı adı..."
+                value={authUsername}
+                onChange={e => setAuthUsername(e.target.value)}
+                style={{ width: '100%', padding: '12px', boxSizing: 'border-box', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.3)', color: '#fff' }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Şifre</label>
+              <input
+                type="password"
+                placeholder="Şifre..."
+                value={authPassword}
+                onChange={e => setAuthPassword(e.target.value)}
+                style={{ width: '100%', padding: '12px', boxSizing: 'border-box', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.3)', color: '#fff' }}
+              />
+            </div>
+            
+            <button 
+              className="glass-btn" 
+              style={{ marginTop: '10px', background: 'rgba(34, 197, 94, 0.3)', padding: '14px' }}
+              onClick={() => authMode === 'login' ? login(authUsername, authPassword) : register(authUsername, authPassword)}
+              disabled={!authUsername || !authPassword}
+            >
+              {authMode === 'login' ? 'Giriş Yap' : 'Kayıt Ol'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ═══════════════════════════════════════════════════
   // LOGIN PHASE — Username + Create/Join Room
@@ -81,16 +156,10 @@ function App() {
             </div>
           )}
 
-          {/* Username */}
-          <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Kullanıcı Adı:</label>
-          <input
-            type="text"
-            placeholder="Adını gir..."
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            maxLength={16}
-            style={{ padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(0,0,0,0.3)', color: '#fff', fontSize: '1.1rem', textAlign: 'center' }}
-          />
+          {/* Welcome User */}
+          <p style={{ textAlign: 'center', margin: 0, fontSize: '1rem', color: '#fbbf24' }}>
+            Hoş geldin, <strong>{myUsername}</strong>!
+          </p>
 
           {/* Mode Choice */}
           {lobbyMode === 'choose' && (
@@ -98,16 +167,16 @@ function App() {
               <button
                 className="glass-btn"
                 onClick={() => setLobbyMode('create')}
-                disabled={!isConnected || !username.trim()}
-                style={{ flex: 1, padding: '14px', fontSize: '1rem', background: username.trim() && isConnected ? 'rgba(34, 197, 94, 0.25)' : undefined, border: '1px solid rgba(34, 197, 94, 0.5)' }}
+                disabled={!isConnected || !myUsername.trim()}
+                style={{ flex: 1, padding: '14px', fontSize: '1rem', background: myUsername.trim() && isConnected ? 'rgba(34, 197, 94, 0.25)' : undefined, border: '1px solid rgba(34, 197, 94, 0.5)' }}
               >
                 🏠 Oda Kur
               </button>
               <button
                 className="glass-btn"
                 onClick={() => setLobbyMode('join')}
-                disabled={!isConnected || !username.trim()}
-                style={{ flex: 1, padding: '14px', fontSize: '1rem', background: username.trim() && isConnected ? 'rgba(59, 130, 246, 0.25)' : undefined, border: '1px solid rgba(59, 130, 246, 0.5)' }}
+                disabled={!isConnected || !myUsername.trim()}
+                style={{ flex: 1, padding: '14px', fontSize: '1rem', background: myUsername.trim() && isConnected ? 'rgba(59, 130, 246, 0.25)' : undefined, border: '1px solid rgba(59, 130, 246, 0.5)' }}
               >
                 🚪 Odaya Katıl
               </button>
@@ -172,11 +241,11 @@ function App() {
                 <button
                   className="glass-btn"
                   onClick={() => {
-                    if (username.trim() && formRoomName.trim() && formPassword.trim() && selectedColor) {
-                      createRoom(formRoomName.trim(), formPassword.trim(), username.trim(), selectedColor);
+                    if (formRoomName.trim() && formPassword.trim() && selectedColor) {
+                      createRoom(formRoomName.trim(), formPassword.trim(), selectedColor);
                     }
                   }}
-                  disabled={!username.trim() || !formRoomName.trim() || !formPassword.trim() || !selectedColor}
+                  disabled={!myUsername.trim() || !formRoomName.trim() || !formPassword.trim() || !selectedColor}
                   style={{ flex: 2, padding: '10px', background: 'rgba(34, 197, 94, 0.3)', fontSize: '1rem' }}
                 >
                   Odayı Kur ✓
@@ -243,11 +312,11 @@ function App() {
                 <button
                   className="glass-btn"
                   onClick={() => {
-                    if (username.trim() && formRoomName.trim() && formPassword.trim() && selectedColor) {
-                      joinRoom(formRoomName.trim(), formPassword.trim(), username.trim(), selectedColor);
+                    if (formRoomName.trim() && formPassword.trim() && selectedColor) {
+                      joinRoom(formRoomName.trim(), formPassword.trim(), selectedColor);
                     }
                   }}
-                  disabled={!username.trim() || !formRoomName.trim() || !formPassword.trim() || !selectedColor}
+                  disabled={!myUsername.trim() || !formRoomName.trim() || !formPassword.trim() || !selectedColor}
                   style={{ flex: 2, padding: '10px', background: 'rgba(59, 130, 246, 0.3)', fontSize: '1rem' }}
                 >
                   Katıl →
@@ -392,7 +461,7 @@ function App() {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div className="header-actions" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             {gameState.turnPhase === 'ROLL' && isMyTurn && (
               <button className="glass-btn action-btn" onClick={actions.rollDice} style={{ background: 'rgba(59, 130, 246, 0.2)' }}>🎲 Zar At</button>
             )}
@@ -420,12 +489,18 @@ function App() {
       <main className="glass-panel game-main" style={{ flex: 1, width: '100%', maxWidth: '1400px', display: 'flex', overflow: 'hidden' }}>
 
         {/* Left Panel: Players */}
-        <aside className="game-sidebar" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', borderRight: '1px solid rgba(255,255,255,0.1)', overflowY: 'auto' }}>
-          {gameState.turnOrder.map(pid => (
+        <aside className={`game-sidebar ${isSidebarOpen ? 'open' : 'closed'}`} style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', borderRight: '1px solid rgba(255,255,255,0.1)', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Oyuncular</span>
+            <button className="sidebar-toggle" onClick={() => setIsSidebarOpen(!isSidebarOpen)} style={{ padding: '4px 8px', fontSize: '0.7rem' }}>
+              {isSidebarOpen ? '▲ Gizle' : '▼ Göster'}
+            </button>
+          </div>
+          {isSidebarOpen && gameState.turnOrder.map(pid => (
             <PlayerPanel key={pid} player={gameState.players[pid]} isActive={currentPlayer.id === pid} />
           ))}
 
-          <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
             {(gameState.turnPhase === 'TRADE_BUILD' || gameState.turnPhase.startsWith('SETUP_')) && isMyTurn && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>İnşaat Menüsü:</p>
@@ -575,6 +650,33 @@ function App() {
           </div>
         </div>
       </main>
+
+      {/* Mobile Floating Action Bar */}
+      <div className="mobile-fab">
+        {gameState.turnPhase === 'ROLL' && isMyTurn && (
+          <button className="glass-btn" onClick={actions.rollDice} style={{ background: 'rgba(59, 130, 246, 0.2)' }}>
+            <span style={{ fontSize: '1.2rem' }}>🎲</span>
+            Zar At
+          </button>
+        )}
+        {(gameState.turnPhase === 'TRADE_BUILD' || gameState.turnPhase.startsWith('SETUP_')) && isMyTurn && (
+          <>
+            <button className="glass-btn" onClick={() => { setIsSidebarOpen(true); setTimeout(() => window.scrollTo(0, 0), 100); }} style={{ background: 'rgba(34, 197, 94, 0.2)' }}>
+              <span style={{ fontSize: '1.2rem' }}>🔨</span>
+              İnşa Et
+            </button>
+            <button className="glass-btn" onClick={actions.endTurn} style={{ background: 'rgba(239, 68, 68, 0.2)' }}>
+              <span style={{ fontSize: '1.2rem' }}>⏭️</span>
+              Turu Bitir
+            </button>
+          </>
+        )}
+        {!isMyTurn && (
+          <div style={{ padding: '8px', textAlign: 'center', color: '#fbbf24', fontSize: '0.9rem', width: '100%' }}>
+            ⏳ Başkasının Sırası...
+          </div>
+        )}
+      </div>
     </div>
   );
 }
