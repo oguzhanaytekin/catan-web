@@ -6,6 +6,8 @@ import { createGameStateFromLobby } from '../src/game/gameState';
 import type { GameState } from '../src/game/gameState';
 import * as gameEngine from '../src/game/gameEngine';
 import { generateRandomMap, generateBoardGraph } from '../src/utils/mapGenerator';
+import { makeBotMove } from './botLogic';
+import type { BotDifficulty } from './botLogic';
 import fs from 'fs';
 import path from 'path';
 
@@ -21,6 +23,8 @@ interface RoomMember {
   color: string;
   isOwner: boolean;
   connected: boolean;
+  isBot?: boolean;
+  botDifficulty?: BotDifficulty;
   disconnectTimer?: ReturnType<typeof setTimeout>;
 }
 
@@ -96,6 +100,8 @@ function buildLobbyUpdate(roomName: string) {
       color: m.color,
       isOwner: m.isOwner,
       connected: m.connected,
+      isBot: m.isBot || false,
+      botDifficulty: m.botDifficulty,
     })),
     started: room.started,
     takenColors: room.members.map(m => m.color),
@@ -111,10 +117,105 @@ function findPlayerIdByUsername(state: GameState, username: string): string | nu
   return null;
 }
 
-// Helper: skip disconnected player's turn
+// Helper: skip disconnected player's turn after 30s
 function skipDisconnectedPlayerTurn(roomName: string) {
-  // DISABLED: User requested to stop automatic skips and moves
-  // This prevents the game from playing automatically for disconnected players, especially during setup phases
+  const room = rooms[roomName];
+  if (!room || !room.gameState) return;
+
+  let state = room.gameState;
+  const currentPid = state.turnOrder[state.currentTurnIndex];
+  const currentMember = room.members.find(m => findPlayerIdByUsername(state, m.username) === currentPid);
+
+  if (!currentMember || currentMember.connected || currentMember.isBot) return;
+
+  console.log(`Auto-skipping disconnected player "${currentMember.username}" in room "${roomName}"`);
+
+  // Setup phases: auto-build required structures first
+  if (state.turnPhase === 'SETUP_ROUND_1' || state.turnPhase === 'SETUP_ROUND_2') {
+    const expectedCount = state.turnPhase === 'SETUP_ROUND_1' ? 1 : 2;
+    const playerSettlements = Object.values(state.buildings).filter(b => b.playerId === currentPid).length;
+    if (playerSettlements < expectedCount) {
+      const validNodes = state.board!.graph.nodes.filter(n => {
+        if (state.buildings[n.id]) return false;
+        const edges = state.board!.graph.edges.filter(e => e.node1.id === n.id || e.node2.id === n.id);
+        const adjIds = edges.map(e => e.node1.id === n.id ? e.node2.id : e.node1.id);
+        return !adjIds.some(adj => state.buildings[adj]);
+      });
+      if (validNodes.length > 0)
+        state = gameEngine.buildSettlement(state, validNodes[Math.floor(Math.random() * validNodes.length)].id, currentPid);
+    }
+    const playerRoads = Object.values(state.roads).filter(r => r === currentPid).length;
+    if (playerRoads < expectedCount) {
+      const mySettlements = Object.entries(state.buildings).filter(([_, b]) => b.playerId === currentPid).map(([id]) => id);
+      const validEdges = state.board!.graph.edges.filter(e =>
+        !state.roads[e.id] && (mySettlements.includes(e.node1.id) || mySettlements.includes(e.node2.id))
+      );
+      if (validEdges.length > 0)
+        state = gameEngine.buildRoad(state, validEdges[Math.floor(Math.random() * validEdges.length)].id, currentPid);
+    }
+  }
+
+  // Handle ROLL phase
+  if (state.turnPhase === 'ROLL') {
+    state = gameEngine.rollDice(state);
+  }
+
+  // Handle ROBBER_MOVE phase
+  if (state.turnPhase === 'ROBBER_MOVE') {
+    const validHexes = state.board!.hexes.filter(h => h.id !== state.robberHexId);
+    if (validHexes.length > 0) {
+      state = gameEngine.moveRobber(state, validHexes[Math.floor(Math.random() * validHexes.length)].id, null, currentPid);
+    }
+  }
+
+  // End turn
+  const afterEnd = gameEngine.endTurn(state);
+  state = afterEnd !== state ? afterEnd : {
+    ...state,
+    currentTurnIndex: (state.currentTurnIndex + 1) % state.turnOrder.length,
+    turnPhase: 'ROLL',
+    diceState: { die1: 1, die2: 1, rolled: false },
+  };
+
+  room.gameState = state;
+  io.to(roomName).emit('gameState', state);
+
+  // If next player is also disconnected (and not a bot), schedule another skip
+  const nextPid = state.turnOrder[state.currentTurnIndex];
+  const nextMember = room.members.find(m => findPlayerIdByUsername(state, m.username) === nextPid);
+  if (nextMember && !nextMember.connected && !nextMember.isBot) {
+    setTimeout(() => skipDisconnectedPlayerTurn(roomName), 3000);
+  }
+
+  // Schedule bot move if next is a bot
+  scheduleNextBotMove(roomName);
+}
+
+// Helper: schedule bot move if current player is a bot
+function scheduleNextBotMove(roomName: string) {
+  const room = rooms[roomName];
+  if (!room || !room.gameState) return;
+  const state = room.gameState;
+  const currentPid = state.turnOrder[state.currentTurnIndex];
+  const member = room.members.find(m => findPlayerIdByUsername(state, m.username) === currentPid);
+
+  if (member?.isBot && member.botDifficulty) {
+    const difficulty = member.botDifficulty;
+    const pid = currentPid;
+    setTimeout(() => {
+      const freshRoom = rooms[roomName];
+      if (!freshRoom?.gameState) return;
+      const freshState = freshRoom.gameState;
+      if (freshState.turnOrder[freshState.currentTurnIndex] !== pid) return;
+
+      const newState = makeBotMove(freshState, pid, difficulty);
+      if (newState !== freshState) {
+        freshRoom.gameState = newState;
+        io.to(roomName).emit('gameState', newState);
+        scheduleNextBotMove(roomName);
+      }
+    }, 1500);
+  }
 }
 
 // ─── Socket Handlers ─────────────────────────────────────
@@ -365,6 +466,40 @@ io.on('connection', (socket) => {
 
     console.log(`Game started in room "${roomName}" with ${room.members.length} players.`);
     io.to(roomName).emit('gameStarted', room.gameState);
+
+    // If first player is a bot, schedule their move
+    scheduleNextBotMove(roomName);
+  });
+
+  // ── Add Bot ───────────────────────────────────────────
+  socket.on('addBot', ({ roomName: rn, difficulty }: { roomName: string; difficulty: BotDifficulty }) => {
+    const room = rooms[rn];
+    if (!room) return socket.emit('lobbyError', 'Oda bulunamadı.');
+    const member = room.members.find(m => m.socketId === socket.id);
+    if (!member?.isOwner) return socket.emit('lobbyError', 'Sadece oda sahibi bot ekleyebilir.');
+    if (room.started) return socket.emit('lobbyError', 'Oyun zaten başladı.');
+    if (room.members.length >= 4) return socket.emit('lobbyError', 'Oda dolu (maksimum 4 oyuncu).');
+
+    const availableColors = Object.keys(PLAYER_COLORS).filter(c => !room.members.some(m => m.color === c));
+    if (availableColors.length === 0) return socket.emit('lobbyError', 'Uygun renk yok.');
+    const color = availableColors[0];
+
+    const botNum = room.members.filter(m => m.isBot).length + 1;
+    const diffLabel = difficulty === 'easy' ? 'Kolay' : 'Orta';
+    const botName = `Bot-${botNum}-${diffLabel}`;
+
+    room.members.push({
+      socketId: `bot-${Date.now()}`,
+      username: botName,
+      color,
+      isOwner: false,
+      connected: true,
+      isBot: true,
+      botDifficulty: difficulty,
+    });
+
+    console.log(`Bot "${botName}" added to room "${rn}" with color ${color}`);
+    io.to(rn).emit('lobbyUpdate', buildLobbyUpdate(rn));
   });
 
   // ── Game Actions ─────────────────────────────────────
@@ -412,6 +547,7 @@ io.on('connection', (socket) => {
     if (newState !== room.gameState) {
       room.gameState = newState;
       io.to(roomName).emit('gameState', newState);
+      scheduleNextBotMove(roomName);
     }
   });
 

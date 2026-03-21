@@ -8,6 +8,8 @@ export interface LobbyMember {
   color: string;
   isOwner: boolean;
   connected: boolean;
+  isBot?: boolean;
+  botDifficulty?: 'easy' | 'medium';
 }
 
 export interface LobbyState {
@@ -40,9 +42,11 @@ export function useCatanGame() {
   const [lobbyError, setLobbyError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [disconnectedPlayer, setDisconnectedPlayer] = useState<{ username: string; timeoutMs: number } | null>(null);
+  const [disconnectCountdown, setDisconnectCountdown] = useState<number | null>(null);
   const [roomList, setRoomList] = useState<RoomInfo[]>([]);
   const [reconnectRoom, setReconnectRoom] = useState<{roomName: string, started: boolean} | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001' : '/');
@@ -69,7 +73,6 @@ export function useCatanGame() {
 
     socket.on('lobbyError', (msg: string) => {
       setLobbyError(msg);
-      // Auto-clear error after 5 seconds
       setTimeout(() => setLobbyError(null), 5000);
     });
 
@@ -106,10 +109,32 @@ export function useCatanGame() {
 
     socket.on('playerDisconnected', (data: { username: string; timeoutMs: number }) => {
       setDisconnectedPlayer(data);
-      setTimeout(() => setDisconnectedPlayer(null), data.timeoutMs + 2000);
+
+      // Start countdown
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+      let remaining = Math.ceil(data.timeoutMs / 1000);
+      setDisconnectCountdown(remaining);
+
+      countdownIntervalRef.current = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) {
+          if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+          setDisconnectCountdown(null);
+        } else {
+          setDisconnectCountdown(remaining);
+        }
+      }, 1000);
+
+      // Clear everything after timeout + buffer
+      setTimeout(() => {
+        if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+        setDisconnectedPlayer(null);
+        setDisconnectCountdown(null);
+      }, data.timeoutMs + 3000);
     });
 
     return () => {
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       socket.disconnect();
     };
   }, []);
@@ -166,6 +191,12 @@ export function useCatanGame() {
     }, 100);
   }, []);
 
+  const addBot = useCallback((difficulty: 'easy' | 'medium') => {
+    if (roomName) {
+      socketRef.current?.emit('addBot', { roomName, difficulty });
+    }
+  }, [roomName]);
+
   const dispatchAction = useCallback((type: string, payload?: any) => {
     if (socketRef.current?.connected && roomName) {
       socketRef.current.emit('action', { roomName, type, payload });
@@ -199,6 +230,7 @@ export function useCatanGame() {
     lobbyError,
     authError,
     disconnectedPlayer,
+    disconnectCountdown,
     roomList,
     reconnectRoom,
     // Actions
@@ -210,6 +242,7 @@ export function useCatanGame() {
     leaveRoom,
     fetchRooms,
     startGame,
+    addBot,
     // Game Actions
     actions: {
       rollDice,

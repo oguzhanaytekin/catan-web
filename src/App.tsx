@@ -18,8 +18,8 @@ function App() {
   const {
     gameState, diceResult, isConnected, phase, isOwner,
     roomName, myPlayerId, myUsername, lobbyState, lobbyError, authError, disconnectedPlayer,
-    roomList, reconnectRoom,
-    register, login, logout, createRoom, joinRoom, leaveRoom, fetchRooms, startGame, actions
+    disconnectCountdown, roomList, reconnectRoom,
+    register, login, logout, createRoom, joinRoom, leaveRoom, fetchRooms, startGame, addBot, actions
   } = useCatanGame();
 
   // ─── Auth State ────────────────────────────────────
@@ -390,7 +390,10 @@ function App() {
                 }}
               >
                 <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: COLOR_MAP[m.color]?.hex || '#888', boxShadow: '0 0 8px rgba(0,0,0,0.5)' }} />
-                <span style={{ flex: 1, fontSize: '1rem', fontWeight: 600 }}>{m.username}</span>
+                <span style={{ flex: 1, fontSize: '1rem', fontWeight: 600 }}>
+                  {m.username}
+                  {m.isBot && <span style={{ marginLeft: '6px', fontSize: '0.7rem', opacity: 0.7 }}>({m.botDifficulty === 'easy' ? 'Kolay' : 'Orta'} Bot)</span>}
+                </span>
                 {m.isOwner && <span style={{ fontSize: '0.75rem', padding: '2px 8px', background: '#fbbf24', color: '#000', borderRadius: '4px', fontWeight: 700 }}>ODA SAHİBİ</span>}
                 {m.connected === false && <span style={{ fontSize: '0.75rem', padding: '2px 8px', background: '#ef4444', color: '#fff', borderRadius: '4px' }}>Bağlantı Koptu</span>}
               </div>
@@ -414,19 +417,40 @@ function App() {
 
           {/* Start Game / Wait */}
           {isOwner ? (
-            <button
-              className="glass-btn"
-              onClick={startGame}
-              disabled={!canStart}
-              style={{
-                padding: '14px', fontSize: '1.1rem',
-                background: canStart ? 'rgba(34, 197, 94, 0.35)' : 'rgba(255,255,255,0.05)',
-                border: canStart ? '1px solid #22c55e' : '1px solid rgba(255,255,255,0.1)',
-                color: canStart ? '#4ade80' : 'rgba(255,255,255,0.3)',
-              }}
-            >
-              {canStart ? '🚀 Oyunu Başlat' : `⏳ En az 2 oyuncu gerekli (${members.length}/2)`}
-            </button>
+            <>
+              <button
+                className="glass-btn"
+                onClick={startGame}
+                disabled={!canStart}
+                style={{
+                  padding: '14px', fontSize: '1.1rem',
+                  background: canStart ? 'rgba(34, 197, 94, 0.35)' : 'rgba(255,255,255,0.05)',
+                  border: canStart ? '1px solid #22c55e' : '1px solid rgba(255,255,255,0.1)',
+                  color: canStart ? '#4ade80' : 'rgba(255,255,255,0.3)',
+                }}
+              >
+                {canStart ? '🚀 Oyunu Başlat' : `⏳ En az 2 oyuncu gerekli (${members.length}/2)`}
+              </button>
+              {/* Bot add buttons */}
+              {members.length < 4 && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    className="glass-btn"
+                    onClick={() => addBot('easy')}
+                    style={{ flex: 1, padding: '10px', fontSize: '0.9rem', background: 'rgba(16,185,129,0.2)', border: '1px solid rgba(16,185,129,0.5)' }}
+                  >
+                    🤖 Kolay Bot Ekle
+                  </button>
+                  <button
+                    className="glass-btn"
+                    onClick={() => addBot('medium')}
+                    style={{ flex: 1, padding: '10px', fontSize: '0.9rem', background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.5)' }}
+                  >
+                    🤖 Orta Bot Ekle
+                  </button>
+                </div>
+              )}
+            </>
           ) : (
             <div style={{ textAlign: 'center', padding: '14px', color: '#fbbf24', fontSize: '1rem' }}>
               ⏳ Oda sahibinin oyunu başlatması bekleniyor...
@@ -455,6 +479,46 @@ function App() {
   const currentPlayerId = gameState.turnOrder[gameState.currentTurnIndex];
   const currentPlayer = gameState.players[currentPlayerId];
   const isMyTurn = currentPlayerId === myPlayerId;
+  const isSetupPhase = gameState.turnPhase === 'SETUP_ROUND_1' || gameState.turnPhase === 'SETUP_ROUND_2';
+  const expectedCount = gameState.turnPhase === 'SETUP_ROUND_1' ? 1 : 2;
+
+  // Compute valid nodes for settlement placement (for mobile quick-select)
+  const validSettlementNodes: typeof gameState.board extends null ? never[] : NonNullable<typeof gameState.board>['graph']['nodes'] = isMyTurn && buildingMode === 'settlement' && gameState.board
+    ? gameState.board.graph.nodes.filter(n => {
+        if (gameState.buildings[n.id]) return false;
+        const edges = gameState.board!.graph.edges.filter(e => e.node1.id === n.id || e.node2.id === n.id);
+        const adjIds = edges.map(e => e.node1.id === n.id ? e.node2.id : e.node1.id);
+        if (adjIds.some(adj => gameState.buildings[adj])) return false;
+        if (!isSetupPhase) return edges.some(e => gameState.roads[e.id] === myPlayerId);
+        const mySettCount = Object.values(gameState.buildings).filter(b => b.playerId === myPlayerId).length;
+        return mySettCount < expectedCount;
+      })
+    : [];
+
+  // Compute valid edges for road placement (for mobile quick-select)
+  const mySettlementIds = gameState.board
+    ? Object.entries(gameState.buildings).filter(([_, b]) => b.playerId === myPlayerId).map(([id]) => id)
+    : [];
+  const myRoadNodeIds = new Set<string>(mySettlementIds);
+  if (gameState.board) {
+    gameState.board.graph.edges
+      .filter(e => gameState.roads[e.id] === myPlayerId)
+      .forEach(e => { myRoadNodeIds.add(e.node1.id); myRoadNodeIds.add(e.node2.id); });
+  }
+  const validRoadEdges: typeof gameState.board extends null ? never[] : NonNullable<typeof gameState.board>['graph']['edges'] = isMyTurn && buildingMode === 'road' && gameState.board
+    ? gameState.board.graph.edges.filter(e => {
+        if (gameState.roads[e.id]) return false;
+        if (isSetupPhase) {
+          const myRoadCount = Object.values(gameState.roads).filter(r => r === myPlayerId).length;
+          if (myRoadCount >= expectedCount) return false;
+          return mySettlementIds.includes(e.node1.id) || mySettlementIds.includes(e.node2.id);
+        }
+        const b1 = gameState.buildings[e.node1.id];
+        const b2 = gameState.buildings[e.node2.id];
+        return ((!b1 || b1.playerId === myPlayerId) && myRoadNodeIds.has(e.node1.id))
+            || ((!b2 || b2.playerId === myPlayerId) && myRoadNodeIds.has(e.node2.id));
+      })
+    : [];
 
   return (
     <div style={{ padding: '24px', width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -605,10 +669,16 @@ function App() {
 
         {/* Right Panel: Board */}
         <div className="game-board-area" style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {/* Disconnection Warning Banner */}
+          {/* Disconnection Warning Banner with countdown */}
           {disconnectedPlayer && (
-            <div style={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', background: 'rgba(239, 68, 68, 0.85)', padding: '10px 20px', borderRadius: '12px', color: '#fff', fontWeight: 'bold', zIndex: 20, boxShadow: '0 4px 12px rgba(0,0,0,0.4)', fontSize: '0.9rem', textAlign: 'center' }}>
-              ⚠️ {disconnectedPlayer.username} bağlantısı koptu! {Math.round(disconnectedPlayer.timeoutMs / 1000)}s içinde gelmezse sırası atlanacak.
+            <div style={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', background: 'rgba(239, 68, 68, 0.85)', padding: '10px 20px', borderRadius: '12px', color: '#fff', fontWeight: 'bold', zIndex: 20, boxShadow: '0 4px 12px rgba(0,0,0,0.4)', fontSize: '0.9rem', textAlign: 'center', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span>⚠️ {disconnectedPlayer.username} bağlantısı koptu!</span>
+              {disconnectCountdown !== null && (
+                <span style={{ background: 'rgba(0,0,0,0.4)', borderRadius: '50%', width: '42px', height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', fontWeight: 900, flexShrink: 0 }}>
+                  {disconnectCountdown}
+                </span>
+              )}
+              <span style={{ fontSize: '0.8rem', opacity: 0.85 }}>saniye içinde gelmezse sırası atlanacak.</span>
             </div>
           )}
           {gameState.turnPhase === 'ROBBER_MOVE' && (
@@ -677,6 +747,57 @@ function App() {
           </div>
         </div>
       </main>
+
+      {/* Mobile Quick-Select Panel for Android touch devices */}
+      {isMyTurn && buildingMode && (validSettlementNodes.length > 0 || validRoadEdges.length > 0) && (
+        <div className="mobile-quick-select">
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px', paddingLeft: '4px' }}>
+            {buildingMode === 'settlement' ? '🏠 Köy Yeri Seç' : '🛣️ Yol Yeri Seç'}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+            {buildingMode === 'settlement' && validSettlementNodes.map((node, i) => {
+              const hexLabels = node.adjacentHexes
+                .map(hid => gameState.board!.hexes.find(h => h.id === hid))
+                .filter(Boolean)
+                .map(h => h!.numberToken || '-')
+                .join('/');
+              return (
+                <button
+                  key={node.id}
+                  onClick={() => { actions.buildSettlement(node.id, myPlayerId); setBuildingMode(null); }}
+                  style={{
+                    flexShrink: 0, minWidth: '80px', padding: '10px 8px',
+                    borderRadius: '10px', border: '1px solid rgba(34,197,94,0.6)',
+                    background: 'rgba(34,197,94,0.2)', color: '#fff',
+                    fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px'
+                  }}
+                >
+                  <span style={{ fontSize: '1.2rem' }}>🏠</span>
+                  <span>#{i + 1}</span>
+                  <span style={{ fontSize: '0.65rem', opacity: 0.8 }}>{hexLabels}</span>
+                </button>
+              );
+            })}
+            {buildingMode === 'road' && validRoadEdges.map((edge, i) => (
+              <button
+                key={edge.id}
+                onClick={() => { actions.buildRoad(edge.id, myPlayerId); setBuildingMode(null); }}
+                style={{
+                  flexShrink: 0, minWidth: '72px', padding: '10px 8px',
+                  borderRadius: '10px', border: '1px solid rgba(251,191,36,0.6)',
+                  background: 'rgba(251,191,36,0.2)', color: '#fff',
+                  fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px'
+                }}
+              >
+                <span style={{ fontSize: '1.2rem' }}>🛣️</span>
+                <span>Yol {i + 1}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Mobile Floating Action Bar */}
       <div className="mobile-fab">
