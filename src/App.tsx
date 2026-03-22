@@ -70,7 +70,7 @@ function App() {
     return (
       <div style={{ padding: '24px', width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         <div className="glass-panel" style={{ width: '400px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <h1 style={{ textAlign: 'center', margin: 0, fontSize: '2.5rem', fontWeight: 800, textShadow: '0 2px 8px rgba(0,0,0,0.5)', letterSpacing: '3px' }}>CATAN</h1>
+          <h1 style={{ textAlign: 'center', margin: 0, fontSize: '2.5rem', fontWeight: 800, textShadow: '0 2px 8px rgba(0,0,0,0.5)', letterSpacing: '3px' }}>HEXATAN</h1>
           
           <div style={{ display: 'flex', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '4px', borderRadius: '10px' }}>
             <button 
@@ -114,8 +114,8 @@ function App() {
             </div>
             
             <button 
-              className="glass-btn" 
-              style={{ marginTop: '10px', background: 'rgba(34, 197, 94, 0.3)', padding: '14px' }}
+              className="glass-btn primary-btn" 
+              style={{ marginTop: '10px', padding: '14px', fontSize: '1.1rem' }}
               onClick={() => authMode === 'login' ? login(authUsername, authPassword) : register(authUsername, authPassword)}
               disabled={!authUsername || !authPassword}
             >
@@ -138,7 +138,7 @@ function App() {
         <div className="glass-panel" style={{ width: '420px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
           {/* Title */}
-          <h1 style={{ textAlign: 'center', margin: 0, fontSize: '2.5rem', fontWeight: 800, textShadow: '0 2px 8px rgba(0,0,0,0.5)', letterSpacing: '3px' }}>CATAN</h1>
+          <h1 style={{ textAlign: 'center', margin: 0, fontSize: '2.5rem', fontWeight: 800, textShadow: '0 2px 8px rgba(0,0,0,0.5)', letterSpacing: '3px' }}>HEXATAN</h1>
           <p style={{ textAlign: 'center', color: isConnected ? '#4ade80' : '#f87171', margin: 0, fontSize: '0.85rem' }}>
             {isConnected ? '🟢 Sunucuya Bağlı' : '🔴 Bağlanıyor...'}
           </p>
@@ -276,14 +276,14 @@ function App() {
               <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                 <button className="glass-btn" onClick={() => setLobbyMode('choose')} style={{ flex: 1, padding: '10px' }}>← Geri</button>
                 <button
-                  className="glass-btn"
+                  className="glass-btn primary-btn"
                   onClick={() => {
                     if (formRoomName.trim() && formPassword.trim() && selectedColor) {
                       createRoom(formRoomName.trim(), formPassword.trim(), selectedColor);
                     }
                   }}
                   disabled={!myUsername.trim() || !formRoomName.trim() || !formPassword.trim() || !selectedColor}
-                  style={{ flex: 2, padding: '10px', background: 'rgba(34, 197, 94, 0.3)', fontSize: '1rem' }}
+                  style={{ flex: 2, padding: '10px', fontSize: '1.1rem' }}
                 >
                   Odayı Kur ✓
                 </button>
@@ -363,14 +363,14 @@ function App() {
               <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                 <button className="glass-btn" onClick={() => setLobbyMode('choose')} style={{ flex: 1, padding: '10px' }}>← Geri</button>
                 <button
-                  className="glass-btn"
+                  className="glass-btn primary-btn"
                   onClick={() => {
                     if (formRoomName.trim() && formPassword.trim() && selectedColor) {
                       joinRoom(formRoomName.trim(), formPassword.trim(), selectedColor);
                     }
                   }}
                   disabled={!myUsername.trim() || !formRoomName.trim() || !formPassword.trim() || !selectedColor}
-                  style={{ flex: 2, padding: '10px', background: 'rgba(59, 130, 246, 0.3)', fontSize: '1rem' }}
+                  style={{ flex: 2, padding: '10px', fontSize: '1.1rem' }}
                 >
                   Katıl →
                 </button>
@@ -393,7 +393,7 @@ function App() {
       <div style={{ padding: '24px', width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         <div className="glass-panel" style={{ width: '450px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-          <h1 style={{ textAlign: 'center', margin: 0, fontSize: '2rem', fontWeight: 800, letterSpacing: '2px' }}>CATAN</h1>
+          <h1 style={{ textAlign: 'center', margin: 0, fontSize: '2rem', fontWeight: 800, letterSpacing: '2px' }}>HEXATAN</h1>
 
           <div style={{ textAlign: 'center', padding: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px' }}>
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Oda: </span>
@@ -451,14 +451,13 @@ function App() {
           {isOwner ? (
             <>
               <button
-                className="glass-btn"
+                className="glass-btn primary-btn anim-float"
                 onClick={startGame}
                 disabled={!canStart}
                 style={{
-                  padding: '14px', fontSize: '1.1rem',
-                  background: canStart ? 'rgba(34, 197, 94, 0.35)' : 'rgba(255,255,255,0.05)',
-                  border: canStart ? '1px solid #22c55e' : '1px solid rgba(255,255,255,0.1)',
-                  color: canStart ? '#4ade80' : 'rgba(255,255,255,0.3)',
+                  padding: '16px', fontSize: '1.2rem',
+                  opacity: canStart ? 1 : 0.5,
+                  transition: 'opacity 0.3s'
                 }}
               >
                 {canStart ? '🚀 Oyunu Başlat' : `⏳ En az 2 oyuncu gerekli (${members.length}/2)`}
@@ -585,7 +584,7 @@ function App() {
       {/* Header Bar */}
       <header className="glass-panel" style={{ width: '100%', maxWidth: '900px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: '2rem', fontWeight: 800, letterSpacing: '2px', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>CATAN</h1>
+          <h1 style={{ margin: 0, fontSize: '2rem', fontWeight: 800, letterSpacing: '2px', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>HEXATAN</h1>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Oda: <strong style={{ color: '#fbbf24' }}>{roomName}</strong></p>
           {(gameState.turnPhase === 'SETUP_ROUND_1' || gameState.turnPhase === 'SETUP_ROUND_2') && (
             <div style={{ marginTop: '8px', padding: '4px 8px', background: '#fbbf24', color: '#000', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
@@ -611,7 +610,7 @@ function App() {
 
           <div className="header-actions" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             {gameState.turnPhase === 'ROLL' && isMyTurn && (
-              <button className="glass-btn action-btn" onClick={actions.rollDice} style={{ background: 'rgba(59, 130, 246, 0.2)' }}>🎲 Zar At</button>
+              <button className="glass-btn primary-btn action-btn anim-float" onClick={actions.rollDice} style={{ padding: '8px 24px', fontSize: '1.1rem' }}>🎲 Zar At</button>
             )}
 
             {(gameState.turnPhase === 'ROLL' || gameState.turnPhase === 'TRADE_BUILD') && isMyTurn && currentPlayer.devCards.knight > 0 && (
@@ -621,7 +620,7 @@ function App() {
             )}
 
             {(gameState.turnPhase === 'TRADE_BUILD' || gameState.turnPhase.startsWith('SETUP_')) && isMyTurn && (
-              <button className="glass-btn action-btn" onClick={actions.endTurn} style={{ background: 'rgba(239, 68, 68, 0.2)' }}>Turu Bitir</button>
+              <button className="glass-btn primary-btn action-btn" onClick={actions.endTurn} style={{ background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)', boxShadow: '0 4px 15px rgba(239, 68, 68, 0.4)', borderColor: 'rgba(255,255,255,0.4)', padding: '8px 24px' }}>Turu Bitir</button>
             )}
 
             {!isMyTurn && (
