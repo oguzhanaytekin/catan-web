@@ -115,7 +115,34 @@ export function endTurn(state: GameState): GameState {
     return state; // Must roll dice first
   }
 
+  const isRoundEnd = state.currentTurnIndex === state.turnOrder.length - 1;
   const nextIndex = (state.currentTurnIndex + 1) % state.turnOrder.length;
+
+  if (isRoundEnd) {
+    // Check win condition at the end of the round
+    const playersArr = Object.values(state.players);
+    const maxVP = Math.max(...playersArr.map(p => p.victoryPoints));
+    
+    if (maxVP >= 10) {
+      // Sort players by points descending
+      const sortedPlayers = [...playersArr].sort((a, b) => b.victoryPoints - a.victoryPoints);
+      
+      const highestVP = sortedPlayers[0].victoryPoints;
+      const secondHighestVP = sortedPlayers.length > 1 ? sortedPlayers[1].victoryPoints : 0;
+      
+      // If the highest scorer has a 2-point lead (e.g., 12 vs 10, or 10 vs 8), they win.
+      // Or if they are the ONLY one who reached 10 points (e.g., 10 vs 9).
+      // Since maxVP >= 10, if they are the only one, secondHighestVP must be < 10, which means difference is at least 1, but we need to ensure ONLY they reached 10.
+      if (highestVP >= secondHighestVP + 2 || (highestVP >= 10 && secondHighestVP < 10)) {
+        return {
+          ...state,
+          turnPhase: 'GAME_OVER',
+          winner: sortedPlayers[0].id
+        };
+      }
+      // If they don't have a 2-point lead and multiple have >= 10, game continues to next round!
+    }
+  }
 
   return {
     ...state,

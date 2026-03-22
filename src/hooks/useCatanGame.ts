@@ -10,6 +10,7 @@ export interface LobbyMember {
   connected: boolean;
   isBot?: boolean;
   botDifficulty?: 'easy' | 'medium';
+  avatar?: string;
 }
 
 export interface LobbyState {
@@ -25,6 +26,12 @@ export interface RoomInfo {
   playerCount: number;
   hasPassword: boolean;
   started: boolean;
+}
+
+export interface UserProfile {
+  gamesPlayed: number;
+  wins: number;
+  avatar: string;
 }
 
 type AppPhase = 'AUTH' | 'LOGIN' | 'LOBBY' | 'GAME';
@@ -45,6 +52,7 @@ export function useCatanGame() {
   const [disconnectCountdown, setDisconnectCountdown] = useState<number | null>(null);
   const [roomList, setRoomList] = useState<RoomInfo[]>([]);
   const [reconnectRoom, setReconnectRoom] = useState<{roomName: string, started: boolean} | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -61,14 +69,19 @@ export function useCatanGame() {
       setTimeout(() => setAuthError(null), 5000);
     });
 
-    socket.on('authSuccess', ({ username, activeRoom, roomStarted }: any) => {
+    socket.on('authSuccess', ({ username, activeRoom, roomStarted, userProfile }: any) => {
       setMyUsername(username);
+      if (userProfile) setUserProfile(userProfile);
       setIsAuthenticated(true);
       setPhase('LOGIN');
       setAuthError(null);
       if (activeRoom) {
         setReconnectRoom({ roomName: activeRoom, started: roomStarted });
       }
+    });
+
+    socket.on('profileUpdateSuccess', (profile: UserProfile) => {
+      setUserProfile(profile);
     });
 
     socket.on('lobbyError', (msg: string) => {
@@ -197,6 +210,10 @@ export function useCatanGame() {
     }
   }, [roomName]);
 
+  const updateAvatar = useCallback((newAvatar: string) => {
+    socketRef.current?.emit('updateAvatar', newAvatar);
+  }, []);
+
   const dispatchAction = useCallback((type: string, payload?: any) => {
     if (socketRef.current?.connected && roomName) {
       socketRef.current.emit('action', { roomName, type, payload });
@@ -233,6 +250,7 @@ export function useCatanGame() {
     disconnectCountdown,
     roomList,
     reconnectRoom,
+    userProfile,
     // Actions
     register,
     login,
@@ -255,5 +273,6 @@ export function useCatanGame() {
       moveRobber,
       tradeWithBank,
     },
+    updateAvatar,
   };
 }

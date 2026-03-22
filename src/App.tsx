@@ -18,8 +18,8 @@ function App() {
   const {
     gameState, diceResult, isConnected, phase, isOwner,
     roomName, myPlayerId, myUsername, lobbyState, lobbyError, authError, disconnectedPlayer,
-    disconnectCountdown, roomList, reconnectRoom,
-    register, login, logout, createRoom, joinRoom, leaveRoom, fetchRooms, startGame, addBot, actions
+    disconnectCountdown, roomList, reconnectRoom, userProfile,
+    register, login, logout, createRoom, joinRoom, leaveRoom, fetchRooms, startGame, addBot, actions, updateAvatar
   } = useCatanGame();
 
   // ─── Auth State ────────────────────────────────────
@@ -40,6 +40,7 @@ function App() {
   const [buildingMode, setBuildingMode] = useState<'road' | 'settlement' | 'city' | null>(null);
   const [tradeMode, setTradeMode] = useState<boolean>(false);
   const [tradeOffer, setTradeOffer] = useState<ResourceType | null>(null);
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 
   // ─── 3D Camera ─────────────────────────────────────
   const containerRef = useRef<HTMLDivElement>(null);
@@ -149,12 +150,41 @@ function App() {
             </div>
           )}
 
-          {/* Welcome User */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <p style={{ margin: 0, fontSize: '1rem', color: '#fbbf24' }}>
-              Hoş geldin, <strong>{myUsername}</strong>!
-            </p>
-            <button className="glass-btn" onClick={logout} style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.2)' }}>🚪 Çıkış</button>
+          {/* Welcome & Profile */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <div 
+                  style={{ fontSize: '3rem', lineHeight: '1', cursor: 'pointer', position: 'relative', background: 'rgba(255,255,255,0.1)', borderRadius: '50%', width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} 
+                  title="Avatarı Değiştir" 
+                  onClick={() => setShowAvatarPicker(!showAvatarPicker)}
+                >
+                  {userProfile?.avatar || '👤'}
+                  <span style={{ position: 'absolute', bottom: '-2px', right: '-2px', fontSize: '0.9rem', background: '#3b82f6', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #1e293b' }}>✏️</span>
+                </div>
+                <div>
+                  <p style={{ margin: '0 0 4px 0', fontSize: '1.2rem', color: '#fff', fontWeight: 700 }}>{myUsername}</p>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: '#fbbf24' }}>
+                    Oyunlar: <strong>{userProfile?.gamesPlayed || 0}</strong><br/>
+                    Kazanma: <strong>{userProfile?.wins || 0}</strong> ({userProfile?.gamesPlayed ? Math.round((userProfile.wins / userProfile.gamesPlayed) * 100) : 0}%)
+                  </p>
+                </div>
+              </div>
+              <button className="glass-btn" onClick={logout} style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.2)' }}>🚪 Çıkış</button>
+            </div>
+            {showAvatarPicker && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px', padding: '12px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                {['👤', '😁', '😎', '🤠', '🧙‍♂️', '👑', '🦁', '🦊', '🐱', '🐶', '🐉', '🎲', '🍎'].map(emoji => (
+                  <button 
+                    key={emoji} 
+                    onClick={() => { updateAvatar(emoji); setShowAvatarPicker(false); }}
+                    style={{ fontSize: '1.5rem', background: userProfile?.avatar === emoji ? 'rgba(59, 130, 246, 0.4)' : 'transparent', border: userProfile?.avatar === emoji ? '2px solid #3b82f6' : '2px solid transparent', borderRadius: '8px', cursor: 'pointer', padding: '4px', transition: 'all 0.2s' }}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Mode Choice */}
@@ -389,7 +419,9 @@ function App() {
                   opacity: m.connected === false ? 0.4 : 1,
                 }}
               >
-                <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: COLOR_MAP[m.color]?.hex || '#888', boxShadow: '0 0 8px rgba(0,0,0,0.5)' }} />
+                <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: COLOR_MAP[m.color]?.hex || '#888', border: '2px solid rgba(255,255,255,0.2)', boxShadow: '0 0 8px rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>
+                  {m.avatar || '👤'}
+                </div>
                 <span style={{ flex: 1, fontSize: '1rem', fontWeight: 600 }}>
                   {m.username}
                   {m.isBot && <span style={{ marginLeft: '6px', fontSize: '0.7rem', opacity: 0.7 }}>({m.botDifficulty === 'easy' ? 'Kolay' : 'Orta'} Bot)</span>}
@@ -471,6 +503,33 @@ function App() {
       <div style={{ padding: '24px', width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="glass-panel" style={{ padding: '32px', textAlign: 'center' }}>
           <p>Oyun durumu yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (gameState.turnPhase === 'GAME_OVER') {
+    const winnerPlayer = gameState.winner ? gameState.players[gameState.winner] : null;
+    return (
+      <div style={{ padding: '24px', width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)' }}>
+        <div className="glass-panel" style={{ padding: '48px', textAlign: 'center', border: `2px solid ${winnerPlayer?.color || '#fbbf24'}`, boxShadow: `0 0 48px ${winnerPlayer?.color || 'rgba(251, 191, 36, 0.5)'}` }}>
+          <h1 style={{ fontSize: '4rem', margin: 0, textShadow: '0 4px 12px rgba(0,0,0,0.5)', letterSpacing: '4px' }}>🏆 OYUN BİTTİ 🏆</h1>
+          {winnerPlayer ? (
+            <div style={{ margin: '32px 0' }}>
+              <p style={{ fontSize: '1.5rem', color: 'var(--text-muted)', margin: 0 }}>Kazanan:</p>
+              <h2 style={{ fontSize: '3.5rem', color: winnerPlayer.color, margin: '8px 0', textTransform: 'uppercase', fontWeight: 900, textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+                {winnerPlayer.name}
+              </h2>
+              <div style={{ display: 'inline-block', padding: '12px 24px', background: 'rgba(251, 191, 36, 0.2)', border: '1px solid #fbbf24', borderRadius: '16px', color: '#fbbf24', fontSize: '1.5rem', fontWeight: 'bold', marginTop: '16px' }}>
+                {winnerPlayer.victoryPoints} ZAFER PUANI
+              </div>
+            </div>
+          ) : (
+             <p style={{ fontSize: '1.5rem' }}>Oyun sona erdi.</p>
+          )}
+          <button className="glass-btn" onClick={leaveRoom} style={{ marginTop: '16px', padding: '16px 32px', fontSize: '1.2rem', background: 'rgba(59, 130, 246, 0.3)', border: '1px solid rgba(59, 130, 246, 0.6)' }}>
+            🚪 Lobiye Dön
+          </button>
         </div>
       </div>
     );

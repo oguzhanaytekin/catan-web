@@ -16,7 +16,7 @@ export interface Player {
   largestArmyAPI: boolean;
 }
 
-export type TurnPhase = 'SETUP_ROUND_1' | 'SETUP_ROUND_2' | 'ROLL' | 'TRADE_BUILD' | 'ROBBER_MOVE';
+export type TurnPhase = 'SETUP_ROUND_1' | 'SETUP_ROUND_2' | 'ROLL' | 'TRADE_BUILD' | 'ROBBER_MOVE' | 'GAME_OVER';
 
 export interface DiceState {
   die1: number;
@@ -46,6 +46,7 @@ export interface GameState {
   largestArmyPlayer: string | null;
   longestRoadPlayer: string | null;
   robberHexId: string;
+  winner: string | null;
 }
 
 export const BUILDING_COSTS = {
@@ -118,6 +119,7 @@ export function createGameStateFromLobby(
     largestArmyPlayer: null,
     longestRoadPlayer: null,
     robberHexId,
+    winner: null,
   };
 }
 
@@ -135,4 +137,5 @@ export const initialGameState: GameState = {
   largestArmyPlayer: null,
   longestRoadPlayer: null,
   robberHexId: '',
+  winner: null,
 };

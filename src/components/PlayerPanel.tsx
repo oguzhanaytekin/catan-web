@@ -42,6 +42,10 @@ export const PlayerPanel: React.FC<PlayerPanelProps> = ({ player, isActive }) =>
           <span style={{ fontSize: '1.2rem', marginBottom: '4px' }}>🐑</span>
           <strong style={{ color: player.resources.sheep > 0 ? '#fff' : '#64748b' }}>{player.resources.sheep}</strong>
         </div>
+        <div className="res-box" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '6px 4px', borderRadius: '4px' }}>
+          <span style={{ fontSize: '1.2rem', marginBottom: '4px' }}>⛰️</span>
+          <strong style={{ color: player.resources.ore > 0 ? '#fff' : '#64748b' }}>{player.resources.ore}</strong>
+        </div>
       </div>
       
       {/* Achievements & Dev Cards */}

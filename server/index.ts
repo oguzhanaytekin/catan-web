@@ -15,6 +15,9 @@ import path from 'path';
 interface User {
   username: string;
   passwordHash: string;
+  gamesPlayed: number;
+  wins: number;
+  avatar: string;
 }
 
 interface RoomMember {
@@ -102,6 +105,7 @@ function buildLobbyUpdate(roomName: string) {
       connected: m.connected,
       isBot: m.isBot || false,
       botDifficulty: m.botDifficulty,
+      avatar: m.isBot ? '🤖' : (users[m.username]?.avatar || '👤')
     })),
     started: room.started,
     takenColors: room.members.map(m => m.color),
@@ -236,6 +240,9 @@ io.on('connection', (socket) => {
     users[username] = {
       username,
       passwordHash: safeHash(password),
+      gamesPlayed: 0,
+      wins: 0,
+      avatar: '👤', // Default avatar
     };
     saveUsers();
     authenticatedUser = username;
@@ -260,7 +267,22 @@ io.on('connection', (socket) => {
       }
     }
 
-    socket.emit('authSuccess', { username, activeRoom, roomStarted });
+    // Provide default stats if an old user logs in
+    if (user.gamesPlayed === undefined) user.gamesPlayed = 0;
+    if (user.wins === undefined) user.wins = 0;
+    if (!user.avatar) user.avatar = '👤';
+    saveUsers();
+
+    socket.emit('authSuccess', { 
+      username, 
+      activeRoom, 
+      roomStarted,
+      userProfile: {
+        gamesPlayed: user.gamesPlayed,
+        wins: user.wins,
+        avatar: user.avatar
+      }
+    });
     console.log(`User logged in: ${username}`);
   });
 
@@ -346,6 +368,21 @@ io.on('connection', (socket) => {
 
     socket.emit('roomJoined', { roomName, isOwner: true });
     io.to(roomName).emit('lobbyUpdate', buildLobbyUpdate(roomName));
+  });
+
+  // ── Update Profile Profile ───────────────────────────
+  socket.on('updateAvatar', (newAvatar: string) => {
+    if (!authenticatedUser || !users[authenticatedUser]) return;
+    const user = users[authenticatedUser];
+    user.avatar = newAvatar;
+    saveUsers();
+    // Notify the user of success
+    socket.emit('profileUpdateSuccess', {
+      gamesPlayed: user.gamesPlayed,
+      wins: user.wins,
+      avatar: user.avatar
+    });
+    console.log(`${user.username} updated avatar to ${newAvatar}`);
   });
 
   // ── Join Room (also handles Reconnection) ────────────
@@ -545,8 +582,29 @@ io.on('connection', (socket) => {
     }
 
     if (newState !== room.gameState) {
+      const wasGameOver = room.gameState.turnPhase === 'GAME_OVER';
       room.gameState = newState;
       io.to(roomName).emit('gameState', newState);
+      
+      // Process stats if the game just ended
+      if (!wasGameOver && newState.turnPhase === 'GAME_OVER') {
+        const connectedMembers = room.members.filter(m => !m.isBot && m.connected);
+        let updated = false;
+        for (const member of connectedMembers) {
+          const u = users[member.username];
+          if (u) {
+            u.gamesPlayed = (u.gamesPlayed || 0) + 1;
+            // Did this player win?
+            const pid = findPlayerIdByUsername(newState, member.username);
+            if (pid === newState.winner) {
+              u.wins = (u.wins || 0) + 1;
+            }
+            updated = true;
+          }
+        }
+        if (updated) saveUsers();
+      }
+
       scheduleNextBotMove(roomName);
     }
   });
